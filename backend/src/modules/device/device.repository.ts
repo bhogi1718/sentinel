@@ -16,6 +16,17 @@ export const deviceRepository = {
     });
   },
 
+  setOnlineStatus(id: string, isOnline: boolean) {
+    return prisma.device.update({
+      where: { id },
+      data: { isOnline, ...(isOnline ? { lastSeenAt: new Date() } : {}) },
+    });
+  },
+
+  findFirst() {
+    return prisma.device.findFirst();
+  },
+
   create(params: { name: string; tokenHash: string }) {
     return prisma.device.create({
       data: { name: params.name, tokenHash: params.tokenHash },

@@ -41,7 +41,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
     const device = socket.device!;
     logger.info(`Agent connected: ${device.name} (${device.id})`);
 
-    void deviceRepository.updateLastSeen(device.id);
+    void deviceRepository.setOnlineStatus(device.id, true);
     broadcastDeviceStatus(device.id, true);
 
     socket.on("event:report", async (payload, ack) => {
@@ -66,6 +66,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
     socket.on("disconnect", () => {
       logger.info(`Agent disconnected: ${device.name} (${device.id})`);
+      void deviceRepository.setOnlineStatus(device.id, false);
       broadcastDeviceStatus(device.id, false);
     });
   });

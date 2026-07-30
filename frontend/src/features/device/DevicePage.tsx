@@ -1,9 +1,10 @@
 import { Icon } from "@/components/ui/Icon";
 import { RadialGauge } from "@/components/ui/RadialGauge";
-import { useSocket } from "@/realtime/useSocket";
+import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 
 export function DevicePage() {
-  const { isConnected } = useSocket();
+  const { data: device } = useDeviceStatus();
+  const isConnected = device?.isOnline ?? false;
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -73,10 +74,8 @@ export function DevicePage() {
             <span className="font-mono text-label-mono uppercase tracking-wider text-on-surface">Network</span>
           </div>
           <div className="flex items-center gap-xs">
-            <span className={`h-2 w-2 rounded-full ${isConnected ? "bg-success" : "bg-outline"}`} />
-            <span className={`font-mono text-label-mono ${isConnected ? "text-success" : "text-on-surface-variant"}`}>
-              {isConnected ? "Connected" : "Offline"}
-            </span>
+            <span className="h-2 w-2 rounded-full bg-outline" />
+            <span className="font-mono text-label-mono text-on-surface-variant">No data yet</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-md">

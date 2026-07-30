@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
+import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { EventRow } from "@/features/events/EventRow";
 import { useEvents } from "@/features/events/useEvents";
-import { useSocket } from "@/realtime/useSocket";
 import { QuickActionButton } from "./QuickActionButton";
 
 const statFields = [
@@ -12,7 +12,8 @@ const statFields = [
 ] as const;
 
 export function DashboardPage() {
-  const { isConnected } = useSocket();
+  const { data: device } = useDeviceStatus();
+  const isConnected = device?.isOnline ?? false;
   const { data: recentEvents, isLoading } = useEvents({ pageSize: 6 });
 
   return (

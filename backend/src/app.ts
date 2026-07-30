@@ -5,6 +5,7 @@ import { env } from "./config/env";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalRateLimiter } from "./middleware/rateLimiter";
 import { authRouter } from "./modules/auth/auth.routes";
+import { deviceRouter } from "./modules/device/device.routes";
 import { eventRouter } from "./modules/event/event.routes";
 import { settingsRouter } from "./modules/settings/settings.routes";
 import { sendSuccess } from "./common/ApiResponse";
@@ -27,6 +28,7 @@ export function createApp(): Application {
   });
 
   app.use("/api/auth", authRouter);
+  app.use("/api/device", deviceRouter);
   app.use("/api/events", eventRouter);
   app.use("/api/settings", settingsRouter);
 

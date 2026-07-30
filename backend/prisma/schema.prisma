@@ -48,6 +48,7 @@ model Device {
   id            String    @id @default(uuid())
   name          String
   tokenHash     String    @unique
+  isOnline      Boolean   @default(false)
   lastSeenAt    DateTime?
   createdAt     DateTime  @default(now())
 
