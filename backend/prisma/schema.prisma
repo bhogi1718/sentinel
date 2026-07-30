@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// The single administrator account for this Sentinel instance.
+/// Sentinel is single-owner software: exactly one row is expected to
+/// ever exist here, created via the seed script, never through a
+/// public registration endpoint.
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+/// Refresh tokens are persisted (rather than trusted purely as signed
+/// JWTs) so an individual session can be revoked on demand - e.g. if
+/// the owner's phone is lost, all outstanding sessions can be killed
+/// without waiting for token expiry.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+/// A laptop running the Sentinel Rust agent. Only one is expected to
+/// exist for the foreseeable future, but modeling it as a first-class
+/// entity (rather than hardcoding "the laptop") gives a clean token
+/// rotation/revocation story identical in spirit to RefreshToken.
+model Device {
+  id            String    @id @default(uuid())
+  name          String
+  tokenHash     String    @unique
+  lastSeenAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  events Event[]
+
+  @@map("devices")
+}
+
+enum EventType {
+  BOOT
+  SHUTDOWN
+  RESTART
+  LOCK
+  UNLOCK
+  SLEEP
+  WAKE
+  INTERNET_CONNECTED
+  INTERNET_DISCONNECTED
+  BATTERY_LOW
+}
+
+/// A system event reported by a device's agent. Persisted first, then
+/// broadcast to connected dashboards and sent to Telegram - persistence
+/// is the source of truth, the live push is a convenience on top of it.
+model Event {
+  id        String    @id @default(uuid())
+  deviceId  String
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type      EventType
+  metadata  Json?
+  occurredAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+
+  @@index([deviceId, occurredAt])
+  @@map("events")
+}

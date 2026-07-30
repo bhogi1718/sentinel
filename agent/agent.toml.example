@@ -1,0 +1,11 @@
+# Copy this file to agent.toml (next to the executable) and fill in real values.
+# agent.toml is gitignored - never commit your real device token.
+
+server_url = "http://3.91.172.118:5000"
+device_token = "REPLACE_WITH_DEVICE_TOKEN_FROM_SEED_OR_ROTATE_SCRIPT"
+
+# Percentage at or below which a BATTERY_LOW event fires (once per drop below threshold)
+battery_low_threshold = 15
+
+# How often to check internet connectivity, in seconds
+network_check_interval_secs = 15
