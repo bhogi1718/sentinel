@@ -1,5 +1,8 @@
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import { EventRow } from "@/features/events/EventRow";
 import { useEvents } from "@/features/events/useEvents";
 import { QuickActionButton } from "./QuickActionButton";
@@ -15,6 +18,8 @@ export function DashboardPage() {
   const { data: device } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
   const { data: recentEvents, isLoading } = useEvents({ pageSize: 6 });
+  const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
+  const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -48,12 +53,30 @@ export function DashboardPage() {
 
       {/* Quick actions */}
       <section className="grid grid-cols-5 gap-sm">
-        <QuickActionButton icon="lock" label="Lock" />
-        <QuickActionButton icon="restart_alt" label="Reset" />
-        <QuickActionButton icon="power_settings_new" label="Off" />
-        <QuickActionButton icon="bedtime" label="Sleep" />
-        <QuickActionButton icon="logout" label="Exit" />
+        {Object.values(REMOTE_COMMANDS).map((command) => (
+          <QuickActionButton
+            key={command.type}
+            icon={command.icon}
+            label={command.label}
+            danger={command.danger}
+            disabled={!isConnected}
+            onClick={() => requestCommand(command.type)}
+          />
+        ))}
       </section>
+
+      <ConfirmDialog
+        open={pendingCommand !== null}
+        title={pendingCommand?.confirmTitle ?? ""}
+        description={pendingCommand?.confirmDescription ?? ""}
+        confirmLabel={pendingCommand?.label ?? "Confirm"}
+        icon={pendingCommand?.icon ?? "lock"}
+        danger={pendingCommand?.danger}
+        isConfirming={isSending}
+        errorMessage={errorMessage}
+        onConfirm={confirm}
+        onCancel={cancel}
+      />
 
       {/* Resource stats */}
       <section className="grid grid-cols-2 gap-gutter">

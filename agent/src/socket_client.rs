@@ -4,6 +4,8 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tracing::{error, info, warn};
 
+use crate::commands::executor;
+use crate::commands::CommandRequest;
 use crate::events::types::ReportedEvent;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
@@ -61,6 +63,11 @@ impl SocketClient {
                 .on("connect_error", |payload, _| {
                     Box::pin(async move {
                         error!("Agent socket connect_error: {:?}", payload);
+                    })
+                })
+                .on("command:execute", |payload, client| {
+                    Box::pin(async move {
+                        handle_command(payload, client).await;
                     })
                 })
                 .on("disconnect", {
@@ -148,5 +155,55 @@ impl SocketClient {
             Ok(Err(_)) => error!("Ack channel closed before receiving a response for event {:?}", event.event_type),
             Err(_) => error!("No ack received from server for event {:?} within {ACK_TIMEOUT:?}", event.event_type),
         }
+    }
+}
+
+/// Handles an incoming command:execute from the server. The server has no
+/// way to receive a Socket.IO-style ack reply from this crate (see
+/// executor module docs), so the outcome is reported back via a plain
+/// command:ack event instead, carrying the same commandId the server sent.
+async fn handle_command(payload: Payload, client: Client) {
+    let Payload::Text(values) = payload else {
+        error!("command:execute payload was not the expected Text variant");
+        return;
+    };
+
+    let Some(first) = values.first() else {
+        error!("command:execute payload was empty");
+        return;
+    };
+
+    let request: CommandRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse command:execute payload: {e}");
+            return;
+        }
+    };
+
+    info!("Executing command {:?} (id: {})", request.command_type, request.command_id);
+
+    // Win32 calls in executor::execute are blocking (process creation,
+    // token duplication) - run them off the async runtime's worker
+    // threads so a slow command can't stall event watchers or the
+    // connection's own message pump.
+    let command_type = request.command_type;
+    let result = tokio::task::spawn_blocking(move || executor::execute(command_type))
+        .await
+        .unwrap_or_else(|e| Err(format!("Command execution task panicked: {e}")));
+
+    let ack_payload = match &result {
+        Ok(()) => serde_json::json!({ "commandId": request.command_id, "success": true }),
+        Err(e) => serde_json::json!({ "commandId": request.command_id, "success": false, "error": e }),
+    };
+
+    if let Err(e) = result {
+        error!("Command {:?} failed: {e}", request.command_type);
+    } else {
+        info!("Command {:?} executed successfully", request.command_type);
+    }
+
+    if let Err(e) = client.emit("command:ack", ack_payload).await {
+        error!("Failed to send command:ack: {e}");
     }
 }

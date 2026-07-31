@@ -1,4 +1,5 @@
 mod agent_runtime;
+mod commands;
 mod config;
 mod events;
 mod service;

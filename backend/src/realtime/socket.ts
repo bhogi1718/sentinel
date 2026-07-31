@@ -28,3 +28,18 @@ export function broadcastEventToDashboards(event: EventWithDevice): void {
 export function broadcastDeviceStatus(deviceId: string, online: boolean): void {
   io?.of("/dashboard").emit("device:status", { deviceId, online });
 }
+
+export function broadcastCommandUpdate(command: unknown): void {
+  io?.of("/dashboard").emit("command:update", command);
+}
+
+/// Finds the agent namespace's currently connected socket for a device (at
+/// most one is ever expected) so the command service can emit directly to
+/// it with an ack, mirroring how the agent itself emits event:report.
+export async function findAgentSocket(deviceId: string) {
+  const agentNamespace = io?.of("/agent");
+  if (!agentNamespace) return undefined;
+
+  const sockets = await agentNamespace.fetchSockets();
+  return sockets.find((socket) => (socket.data as { deviceId?: string }).deviceId === deviceId);
+}

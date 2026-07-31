@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { io } from "socket.io-client";
 import type { Socket } from "socket.io-client";
 import { getAccessToken } from "@/api/client";
+import type { Command } from "@/api/command.api";
 import type { DeviceStatus } from "@/api/device.api";
 import { useAuth } from "@/features/auth/useAuth";
 import { DEVICE_STATUS_QUERY_KEY } from "@/features/device/useDeviceStatus";
@@ -47,6 +48,10 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         if (!current || current.id !== payload.deviceId) return current;
         return { ...current, isOnline: payload.online };
       });
+    });
+
+    dashboardSocket.on("command:update", (command: Command) => {
+      queryClient.setQueryData<Command>(["command", command.id], command);
     });
 
     setSocket(dashboardSocket);

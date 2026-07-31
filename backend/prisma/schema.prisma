@@ -53,6 +53,7 @@ model Device {
   createdAt     DateTime  @default(now())
 
   events Event[]
+  commands Command[]
 
   @@map("devices")
 }
@@ -84,4 +85,37 @@ model Event {
 
   @@index([deviceId, occurredAt])
   @@map("events")
+}
+
+enum CommandType {
+  LOCK
+  RESTART
+  SHUTDOWN
+  SLEEP
+  LOG_OFF
+}
+
+enum CommandStatus {
+  PENDING
+  SENT
+  ACKNOWLEDGED
+  FAILED
+}
+
+/// A remote action requested from the dashboard. Persisted immediately on
+/// request (before delivery is even attempted) so there's always an audit
+/// trail of what was asked for and when, independent of whether the agent
+/// was reachable to actually carry it out.
+model Command {
+  id          String        @id @default(uuid())
+  deviceId    String
+  device      Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type        CommandType
+  status      CommandStatus @default(PENDING)
+  errorMessage String?
+  requestedAt DateTime      @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([deviceId, requestedAt])
+  @@map("commands")
 }

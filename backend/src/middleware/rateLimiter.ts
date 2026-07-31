@@ -20,3 +20,14 @@ export const authRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many auth attempts, try again later")),
 });
+
+// Remote commands (lock/restart/shutdown/etc.) are high-impact actions on
+// real hardware - capped well below general API traffic to limit the blast
+// radius of a compromised session spamming destructive commands.
+export const commandRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 10 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many commands sent, try again later")),
+});

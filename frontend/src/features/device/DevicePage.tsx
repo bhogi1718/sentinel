@@ -1,10 +1,18 @@
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { RadialGauge } from "@/components/ui/RadialGauge";
+import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useRemoteCommand } from "@/features/device/useRemoteCommand";
+import type { CommandType } from "@/api/command.api";
+
+const DEVICE_PAGE_COMMANDS: CommandType[] = ["RESTART", "LOCK", "SHUTDOWN"];
 
 export function DevicePage() {
   const { data: device } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
+  const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
+  const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -94,27 +102,50 @@ export function DevicePage() {
           Remote Actions
         </span>
         <div className="grid grid-cols-4 gap-sm">
-          {([
-            ["screenshot", "Capture"],
-            ["restart_alt", "Reboot"],
-            ["lock", "Lock"],
-            ["power_settings_new", "Off"],
-          ] as const).map(([icon, label]) => (
-            <button
-              key={icon}
-              type="button"
-              disabled
-              title="Remote commands ship in a later module"
-              className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm opacity-50"
-            >
-              <Icon name={icon} size={20} className={label === "Off" ? "text-error" : "text-on-surface-variant"} />
-              <span className={`font-mono text-[10px] uppercase ${label === "Off" ? "text-error" : "text-on-surface"}`}>
-                {label}
-              </span>
-            </button>
-          ))}
+          <button
+            type="button"
+            disabled
+            title="Screenshots ship in a later module"
+            className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm opacity-50"
+          >
+            <Icon name="screenshot" size={20} className="text-on-surface-variant" />
+            <span className="font-mono text-[10px] uppercase text-on-surface">Capture</span>
+          </button>
+
+          {DEVICE_PAGE_COMMANDS.map((type) => {
+            const command = REMOTE_COMMANDS[type];
+            const label = type === "RESTART" ? "Reboot" : command.label;
+            return (
+              <button
+                key={type}
+                type="button"
+                disabled={!isConnected}
+                onClick={() => requestCommand(type)}
+                title={isConnected ? command.label : "Device is offline"}
+                className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm transition-colors active:scale-[0.97] disabled:opacity-50 hover:bg-surface-container-high"
+              >
+                <Icon name={command.icon} size={20} className={command.danger ? "text-error" : "text-on-surface-variant"} />
+                <span className={`font-mono text-[10px] uppercase ${command.danger ? "text-error" : "text-on-surface"}`}>
+                  {label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingCommand !== null}
+        title={pendingCommand?.confirmTitle ?? ""}
+        description={pendingCommand?.confirmDescription ?? ""}
+        confirmLabel={pendingCommand?.label ?? "Confirm"}
+        icon={pendingCommand?.icon ?? "lock"}
+        danger={pendingCommand?.danger}
+        isConfirming={isSending}
+        errorMessage={errorMessage}
+        onConfirm={confirm}
+        onCancel={cancel}
+      />
     </div>
   );
 }
