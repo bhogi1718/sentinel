@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-Service -Name SentinelAgent -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-Service -Name SentinelAgent -ErrorAction SilentlyContinue)",
+      "Bash(net stop *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/api/health)",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\" //FO CSV)",
+      "PowerShell(Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-Command','Stop-Service -Name SentinelAgent -Force' -Wait)",
+      "Bash(sc.exe query *)",
+      "Bash(cargo build *)"
     ]
   }
 }
