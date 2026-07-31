@@ -1,3 +1,4 @@
+import { logger } from "../../config/logger";
 import { prisma } from "../../prisma/client";
 
 export const deviceRepository = {
@@ -16,11 +17,14 @@ export const deviceRepository = {
     });
   },
 
-  setOnlineStatus(id: string, isOnline: boolean) {
-    return prisma.device.update({
+  async setOnlineStatus(id: string, isOnline: boolean) {
+    logger.info(`[DEBUG] setOnlineStatus called`, { id, isOnline });
+    const result = await prisma.device.update({
       where: { id },
       data: { isOnline, ...(isOnline ? { lastSeenAt: new Date() } : {}) },
     });
+    logger.info(`[DEBUG] setOnlineStatus result`, { result });
+    return result;
   },
 
   findFirst() {

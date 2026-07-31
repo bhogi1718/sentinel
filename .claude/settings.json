@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Service -Name SentinelAgent -ErrorAction SilentlyContinue)"
+    ]
+  }
+}

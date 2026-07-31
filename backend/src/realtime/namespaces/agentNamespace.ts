@@ -41,7 +41,9 @@ export function registerAgentNamespace(io: SocketIOServer): void {
     const device = socket.device!;
     logger.info(`Agent connected: ${device.name} (${device.id})`);
 
-    void deviceRepository.setOnlineStatus(device.id, true);
+    deviceRepository.setOnlineStatus(device.id, true).catch((err) => {
+      logger.error(`Failed to mark device ${device.id} online`, { error: err instanceof Error ? err.message : err });
+    });
     broadcastDeviceStatus(device.id, true);
 
     socket.on("event:report", async (payload, ack) => {
@@ -54,7 +56,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
       try {
         await eventService.recordEvent(device.id, device.name, parsed.data);
-        void deviceRepository.updateLastSeen(device.id);
+        await deviceRepository.updateLastSeen(device.id);
         ack({ success: true });
       } catch (err) {
         logger.error(`Failed to record event from device ${device.id}`, {
@@ -66,7 +68,9 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
     socket.on("disconnect", () => {
       logger.info(`Agent disconnected: ${device.name} (${device.id})`);
-      void deviceRepository.setOnlineStatus(device.id, false);
+      deviceRepository.setOnlineStatus(device.id, false).catch((err) => {
+        logger.error(`Failed to mark device ${device.id} offline`, { error: err instanceof Error ? err.message : err });
+      });
       broadcastDeviceStatus(device.id, false);
     });
   });

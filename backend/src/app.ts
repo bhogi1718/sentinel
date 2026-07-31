@@ -13,6 +13,11 @@ import { sendSuccess } from "./common/ApiResponse";
 export function createApp(): Application {
   const app = express();
 
+  // Exactly one reverse proxy (Nginx) sits in front of this app in
+  // production, so trust the single hop's X-Forwarded-* headers - needed
+  // for express-rate-limit to see real client IPs instead of Nginx's.
+  app.set("trust proxy", 1);
+
   app.use(helmet());
   app.use(
     cors({
