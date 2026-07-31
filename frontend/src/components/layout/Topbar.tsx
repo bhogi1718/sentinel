@@ -21,7 +21,7 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 bg-surface-container/80 pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+    <header className="z-40 shrink-0 bg-surface-container/80 pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.24)] backdrop-blur-xl">
       <div className="flex h-16 items-center justify-between px-margin-mobile">
         <div className="flex items-center gap-sm">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary">

@@ -7,6 +7,8 @@ import { deviceService } from "../../modules/device/device.service";
 import { AuthenticatedDevice } from "../../modules/device/device.types";
 import { eventService } from "../../modules/event/event.service";
 import { reportEventSchema } from "../../modules/event/event.validation";
+import { processService } from "../../modules/process/process.service";
+import { processListResponseSchema } from "../../modules/process/process.validation";
 import { broadcastDeviceStatus } from "../socket";
 
 interface AgentSocket extends Socket {
@@ -83,6 +85,16 @@ export function registerAgentNamespace(io: SocketIOServer): void {
           error: err instanceof Error ? err.message : err,
         });
       }
+    });
+
+    socket.on("process:list:response", (payload) => {
+      const parsed = processListResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        logger.error(`Received malformed process:list:response from device ${device.id}`, { payload });
+        return;
+      }
+
+      processService.resolveResponse(parsed.data.requestId, parsed.data.processes);
     });
 
     socket.on("disconnect", () => {

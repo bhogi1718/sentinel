@@ -2,6 +2,7 @@ mod agent_runtime;
 mod commands;
 mod config;
 mod events;
+mod processes;
 mod service;
 mod socket_client;
 

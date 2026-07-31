@@ -5,6 +5,7 @@ import { commandRateLimiter } from "../../middleware/rateLimiter";
 import { validateRequest } from "../../middleware/validateRequest";
 import { commandController } from "../command/command.controller";
 import { createCommandSchema } from "../command/command.validation";
+import { processController } from "../process/process.controller";
 import { deviceController } from "./device.controller";
 
 export const deviceRouter = Router();
@@ -17,3 +18,4 @@ deviceRouter.post(
   validateRequest(createCommandSchema),
   asyncHandler(commandController.create),
 );
+deviceRouter.get("/processes", authGuard, asyncHandler(processController.list));

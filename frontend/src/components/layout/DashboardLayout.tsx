@@ -8,11 +8,11 @@ export function DashboardLayout() {
   const location = useLocation();
 
   return (
-    <div className="flex min-h-screen bg-surface">
+    <div className="flex h-screen overflow-hidden bg-surface">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 px-margin-mobile py-md pb-24 md:px-margin-desktop md:pb-md">
+        <main className="flex-1 overflow-y-auto px-margin-mobile py-md pb-24 md:px-margin-desktop md:pb-md">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

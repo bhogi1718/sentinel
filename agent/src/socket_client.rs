@@ -7,6 +7,7 @@ use tracing::{error, info, warn};
 use crate::commands::executor;
 use crate::commands::CommandRequest;
 use crate::events::types::ReportedEvent;
+use crate::processes::{self, ProcessListRequest};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -68,6 +69,11 @@ impl SocketClient {
                 .on("command:execute", |payload, client| {
                     Box::pin(async move {
                         handle_command(payload, client).await;
+                    })
+                })
+                .on("process:list:request", |payload, client| {
+                    Box::pin(async move {
+                        handle_process_list_request(payload, client).await;
                     })
                 })
                 .on("disconnect", {
@@ -205,5 +211,48 @@ async fn handle_command(payload: Payload, client: Client) {
 
     if let Err(e) = client.emit("command:ack", ack_payload).await {
         error!("Failed to send command:ack: {e}");
+    }
+}
+
+/// Handles an incoming process:list:request from the server, replying with
+/// process:list:response. Same plain-event-plus-reply shape as commands,
+/// for the same reason: this crate can't respond to a server-initiated ack.
+async fn handle_process_list_request(payload: Payload, client: Client) {
+    let Payload::Text(values) = payload else {
+        error!("process:list:request payload was not the expected Text variant");
+        return;
+    };
+
+    let Some(first) = values.first() else {
+        error!("process:list:request payload was empty");
+        return;
+    };
+
+    let request: ProcessListRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse process:list:request payload: {e}");
+            return;
+        }
+    };
+
+    info!("Listing processes (request id: {})", request.request_id);
+
+    // Enumerating processes and sampling CPU% blocks the thread for the
+    // sample interval - keep it off the async runtime's worker threads.
+    let processes = tokio::task::spawn_blocking(processes::list_processes)
+        .await
+        .unwrap_or_else(|e| {
+            error!("Process listing task panicked: {e}");
+            Vec::new()
+        });
+
+    let response_payload = serde_json::json!({
+        "requestId": request.request_id,
+        "processes": processes,
+    });
+
+    if let Err(e) = client.emit("process:list:response", response_payload).await {
+        error!("Failed to send process:list:response: {e}");
     }
 }
