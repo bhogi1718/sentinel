@@ -23,7 +23,7 @@ export function formatEventMessage(deviceName: string, type: EventType, occurred
 
   message += `\n<i>${occurredAt.toLocaleString("en-US", {
     dateStyle: "medium",
-    timeStyle: "short",
+    timeStyle: "medium",
     timeZone: "Asia/Kolkata",
   })}</i>`;
 
