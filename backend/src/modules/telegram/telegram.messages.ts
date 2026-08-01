@@ -13,13 +13,19 @@ const EVENT_LABELS: Record<EventType, { emoji: string; label: string }> = {
   BATTERY_LOW: { emoji: "🔋", label: "battery is low" },
 };
 
-export function formatEventMessage(deviceName: string, type: EventType, metadata?: unknown): string {
+export function formatEventMessage(deviceName: string, type: EventType, occurredAt: Date, metadata?: unknown): string {
   const { emoji, label } = EVENT_LABELS[type];
   let message = `${emoji} <b>${deviceName}</b> ${label}`;
 
   if (type === "BATTERY_LOW" && metadata && typeof metadata === "object" && "batteryPercent" in metadata) {
     message += ` (${(metadata as { batteryPercent: number }).batteryPercent}%)`;
   }
+
+  message += `\n<i>${occurredAt.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Kolkata",
+  })}</i>`;
 
   return message;
 }

@@ -4,7 +4,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::RemoteDesktop::{
-    WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
+    WTSGetActiveConsoleSessionId, WTSRegisterSessionNotification, WTSUnRegisterSessionNotification,
+    NOTIFY_FOR_ALL_SESSIONS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, DispatchMessageW, GetMessageW, PostQuitMessage, TranslateMessage, MSG,
@@ -29,19 +30,26 @@ thread_local! {
 
 unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if msg == WM_WTSSESSION_CHANGE {
-        let reason = wparam.0 as u32;
-        let event = match reason {
-            WTS_SESSION_LOCK => Some(SessionEvent::Locked),
-            WTS_SESSION_UNLOCK => Some(SessionEvent::Unlocked),
-            _ => None,
-        };
+        // With NOTIFY_FOR_ALL_SESSIONS, lparam carries the session ID the
+        // notification came from - only the active console session is the
+        // real interactive user, so anything else (e.g. Session 0 itself)
+        // is filtered out here rather than trusted implicitly.
+        let session_id = lparam.0 as u32;
+        if session_id == WTSGetActiveConsoleSessionId() {
+            let reason = wparam.0 as u32;
+            let event = match reason {
+                WTS_SESSION_LOCK => Some(SessionEvent::Locked),
+                WTS_SESSION_UNLOCK => Some(SessionEvent::Unlocked),
+                _ => None,
+            };
 
-        if let Some(event) = event {
-            EVENT_TX.with(|tx| {
-                if let Some(tx) = tx.borrow().as_ref() {
-                    let _ = tx.send(event);
-                }
-            });
+            if let Some(event) = event {
+                EVENT_TX.with(|tx| {
+                    if let Some(tx) = tx.borrow().as_ref() {
+                        let _ = tx.send(event);
+                    }
+                });
+            }
         }
         return LRESULT(0);
     }
@@ -71,8 +79,13 @@ fn spawn_message_loop() -> mpsc::UnboundedReceiver<SessionEvent> {
             }
         };
 
+        // NOTIFY_FOR_THIS_SESSION would register for the *calling process's*
+        // session - Session 0 for a LocalSystem service, which never has an
+        // interactive user and so never locks/unlocks. NOTIFY_FOR_ALL_SESSIONS
+        // is required to see session-change notifications from the actual
+        // interactive session (Session 1+).
         unsafe {
-            let _ = WTSRegisterSessionNotification(window.hwnd(), NOTIFY_FOR_THIS_SESSION);
+            let _ = WTSRegisterSessionNotification(window.hwnd(), NOTIFY_FOR_ALL_SESSIONS);
         }
 
         let mut msg = MSG::default();

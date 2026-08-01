@@ -15,7 +15,7 @@ export const eventService = {
     });
 
     broadcastEventToDashboards(event);
-    void telegramService.sendMessage(formatEventMessage(deviceName, input.type, input.metadata));
+    void telegramService.sendMessage(formatEventMessage(deviceName, input.type, event.occurredAt, input.metadata));
 
     return event;
   },

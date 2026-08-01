@@ -1,12 +1,23 @@
 use std::path::Path;
+use chrono::{DateTime, Utc};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use windows::Win32::System::SystemInformation::GetTickCount64;
 
 use crate::config::Config;
 use crate::events;
 use crate::events::types::{EventType, ReportedEvent};
 use crate::socket_client::SocketClient;
+
+/// Windows tracks milliseconds elapsed since boot (GetTickCount64), not a
+/// boot timestamp directly - subtracting that duration from "now" recovers
+/// the actual boot time. This only needs to be accurate to the second,
+/// which GetTickCount64 comfortably is.
+fn system_boot_time() -> DateTime<Utc> {
+    let uptime_ms = unsafe { GetTickCount64() };
+    Utc::now() - chrono::Duration::milliseconds(uptime_ms as i64)
+}
 
 /// Owns the connection lifecycle: connects, publishes the live client to
 /// every watcher via the watch channel, and reconnects when notified of a
@@ -28,7 +39,8 @@ async fn run_connection_manager(
 
         if first_connection {
             first_connection = false;
-            SocketClient::report_event(&client, ReportedEvent::new(EventType::Boot)).await;
+            let event = ReportedEvent::new(EventType::Boot).occurred_at(system_boot_time());
+            SocketClient::report_event(&client, event).await;
         }
 
         let _ = client_tx.send(Some(client));

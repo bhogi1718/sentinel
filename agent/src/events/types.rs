@@ -41,6 +41,8 @@ pub struct ReportedEvent {
     pub event_type: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, serde_json::Value>>,
+    #[serde(rename = "occurredAt", skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<String>,
 }
 
 impl ReportedEvent {
@@ -48,6 +50,7 @@ impl ReportedEvent {
         Self {
             event_type: event_type.as_str(),
             metadata: None,
+            occurred_at: None,
         }
     }
 
@@ -55,6 +58,16 @@ impl ReportedEvent {
         Self {
             event_type: event_type.as_str(),
             metadata: Some(metadata),
+            occurred_at: None,
         }
+    }
+
+    /// Backdates the event to when it actually happened rather than when
+    /// it was reported - needed for BOOT specifically, since the agent
+    /// can only report it once it manages to connect, which may be well
+    /// after the OS actually finished booting (e.g. no network yet).
+    pub fn occurred_at(mut self, timestamp: chrono::DateTime<chrono::Utc>) -> Self {
+        self.occurred_at = Some(timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        self
     }
 }
