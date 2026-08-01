@@ -1,5 +1,6 @@
 use rust_socketio::asynchronous::{Client, ClientBuilder};
 use rust_socketio::Payload;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tracing::{error, info, warn};
@@ -7,6 +8,7 @@ use tracing::{error, info, warn};
 use crate::commands::executor;
 use crate::commands::CommandRequest;
 use crate::events::types::ReportedEvent;
+use crate::files::{self, FileDownloadRequest, FileListRequest};
 use crate::processes::{self, ProcessListRequest};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
@@ -14,13 +16,15 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 pub struct SocketClient {
     server_url: String,
     device_token: String,
+    browse_root: PathBuf,
 }
 
 impl SocketClient {
-    pub fn new(server_url: String, device_token: String) -> Self {
+    pub fn new(server_url: String, device_token: String, browse_root: PathBuf) -> Self {
         Self {
             server_url,
             device_token,
+            browse_root,
         }
     }
 
@@ -75,6 +79,24 @@ impl SocketClient {
                     Box::pin(async move {
                         handle_process_list_request(payload, client).await;
                     })
+                })
+                .on("files:list:request", {
+                    let browse_root = self.browse_root.clone();
+                    move |payload, client| {
+                        let browse_root = browse_root.clone();
+                        Box::pin(async move {
+                            handle_files_list_request(payload, client, browse_root).await;
+                        })
+                    }
+                })
+                .on("files:download:request", {
+                    let browse_root = self.browse_root.clone();
+                    move |payload, client| {
+                        let browse_root = browse_root.clone();
+                        Box::pin(async move {
+                            handle_files_download_request(payload, client, browse_root).await;
+                        })
+                    }
                 })
                 .on("disconnect", {
                     let disconnect_tx = disconnect_tx.clone();
@@ -254,5 +276,166 @@ async fn handle_process_list_request(payload: Payload, client: Client) {
 
     if let Err(e) = client.emit("process:list:response", response_payload).await {
         error!("Failed to send process:list:response: {e}");
+    }
+}
+
+/// Handles an incoming files:list:request, replying with either
+/// files:list:response (success) or files:list:error (any failure,
+/// including a rejected path) - the server needs a definite completion of
+/// the pending request either way, or it would sit until the timeout fires.
+async fn handle_files_list_request(payload: Payload, client: Client, browse_root: PathBuf) {
+    let Payload::Text(values) = payload else {
+        error!("files:list:request payload was not the expected Text variant");
+        return;
+    };
+
+    let Some(first) = values.first() else {
+        error!("files:list:request payload was empty");
+        return;
+    };
+
+    let request: FileListRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse files:list:request payload: {e}");
+            return;
+        }
+    };
+
+    info!("Listing directory '{}' (request id: {})", request.path, request.request_id);
+
+    let path = request.path.clone();
+    let result = tokio::task::spawn_blocking(move || files::list_directory(&browse_root, &path))
+        .await
+        .unwrap_or_else(|e| Err(format!("Directory listing task panicked: {e}")));
+
+    match result {
+        Ok(entries) => {
+            let payload = serde_json::json!({ "requestId": request.request_id, "entries": entries });
+            if let Err(e) = client.emit("files:list:response", payload).await {
+                error!("Failed to send files:list:response: {e}");
+            }
+        }
+        Err(message) => {
+            error!("Directory listing failed for '{}': {message}", request.path);
+            let payload = serde_json::json!({ "requestId": request.request_id, "error": message });
+            if let Err(e) = client.emit("files:list:error", payload).await {
+                error!("Failed to send files:list:error: {e}");
+            }
+        }
+    }
+}
+
+const DOWNLOAD_CHUNK_SIZE: usize = 64 * 1024;
+
+/// Handles an incoming files:download:request by streaming the file back
+/// as a sequence of files:download:chunk binary events, followed by
+/// exactly one files:download:complete or files:download:error. Reading is
+/// done on a blocking thread and handed to this async task over a bounded
+/// channel, so a slow network send applies backpressure to the file reads
+/// instead of the whole file being buffered in memory up front.
+async fn handle_files_download_request(payload: Payload, client: Client, browse_root: PathBuf) {
+    let Payload::Text(values) = payload else {
+        error!("files:download:request payload was not the expected Text variant");
+        return;
+    };
+
+    let Some(first) = values.first() else {
+        error!("files:download:request payload was empty");
+        return;
+    };
+
+    let request: FileDownloadRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse files:download:request payload: {e}");
+            return;
+        }
+    };
+
+    info!("Starting download of '{}' (request id: {})", request.path, request.request_id);
+
+    let resolved = {
+        let browse_root = browse_root.clone();
+        let path = request.path.clone();
+        tokio::task::spawn_blocking(move || files::resolve_download_path(&browse_root, &path)).await
+    };
+
+    let file_path = match resolved.unwrap_or_else(|e| Err(format!("Path resolution task panicked: {e}"))) {
+        Ok(path) => path,
+        Err(message) => {
+            error!("Download rejected for '{}': {message}", request.path);
+            send_download_error(&client, &request.request_id, &message).await;
+            return;
+        }
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, String>>(4);
+
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+
+        let mut file = match std::fs::File::open(&file_path) {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = tx.blocking_send(Err(format!("Failed to open file: {e}")));
+                return;
+            }
+        };
+
+        let mut buffer = vec![0u8; DOWNLOAD_CHUNK_SIZE];
+        loop {
+            match file.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if tx.blocking_send(Ok(buffer[..n].to_vec())).is_err() {
+                        // Receiver dropped - the async side already gave up
+                        // (e.g. the socket died), no point reading further.
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(format!("Read error: {e}")));
+                    break;
+                }
+            }
+        }
+    });
+
+    while let Some(chunk) = rx.recv().await {
+        match chunk {
+            Ok(bytes) => {
+                // emit() can only carry a single Payload, and Payload has
+                // no variant mixing text with binary - the requestId is
+                // prefixed onto the binary chunk itself instead (a UUID's
+                // string form is always exactly 36 ASCII bytes, so the
+                // server can slice a fixed-width prefix back off).
+                let mut framed = Vec::with_capacity(36 + bytes.len());
+                framed.extend_from_slice(request.request_id.as_bytes());
+                framed.extend_from_slice(&bytes);
+
+                if let Err(e) = client.emit("files:download:chunk", framed).await {
+                    error!("Failed to send files:download:chunk: {e}");
+                    return;
+                }
+            }
+            Err(message) => {
+                error!("Download failed for '{}': {message}", request.path);
+                send_download_error(&client, &request.request_id, &message).await;
+                return;
+            }
+        }
+    }
+
+    let payload = serde_json::json!({ "requestId": request.request_id });
+    if let Err(e) = client.emit("files:download:complete", payload).await {
+        error!("Failed to send files:download:complete: {e}");
+    }
+}
+
+async fn send_download_error(client: &Client, request_id: &str, message: &str) {
+    let payload = serde_json::json!({ "requestId": request_id, "error": message });
+    if let Err(e) = client.emit("files:download:error", payload).await {
+        error!("Failed to send files:download:error: {e}");
     }
 }

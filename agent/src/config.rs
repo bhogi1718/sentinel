@@ -9,6 +9,12 @@ pub struct Config {
     pub battery_low_threshold: u8,
     #[serde(default = "default_network_check_interval_secs")]
     pub network_check_interval_secs: u64,
+    /// File browsing is confined to this directory (and everything under
+    /// it). Configured explicitly rather than read from the USERPROFILE
+    /// environment variable, because the agent runs as a Windows Service
+    /// under LocalSystem - its own USERPROFILE points at the SYSTEM
+    /// profile, not the interactive user's actual home directory.
+    pub browse_root: String,
 }
 
 fn default_battery_low_threshold() -> u8 {

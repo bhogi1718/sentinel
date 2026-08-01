@@ -9,3 +9,9 @@ battery_low_threshold = 15
 
 # How often to check internet connectivity, in seconds
 network_check_interval_secs = 15
+
+# File browsing/download is confined to this directory and everything
+# under it. Must be an absolute path - typically your user profile.
+# The service runs as LocalSystem, whose own USERPROFILE points at the
+# SYSTEM profile, not yours, so this can't be auto-detected.
+browse_root = "C:\\Users\\REPLACE_WITH_YOUR_USERNAME"

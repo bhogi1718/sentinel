@@ -7,6 +7,8 @@ import { deviceService } from "../../modules/device/device.service";
 import { AuthenticatedDevice } from "../../modules/device/device.types";
 import { eventService } from "../../modules/event/event.service";
 import { reportEventSchema } from "../../modules/event/event.validation";
+import { fileService } from "../../modules/file/file.service";
+import { fileListErrorSchema, fileListResponseSchema } from "../../modules/file/file.validation";
 import { processService } from "../../modules/process/process.service";
 import { processListResponseSchema } from "../../modules/process/process.validation";
 import { broadcastDeviceStatus } from "../socket";
@@ -95,6 +97,63 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       }
 
       processService.resolveResponse(parsed.data.requestId, parsed.data.processes);
+    });
+
+    socket.on("files:list:response", (payload) => {
+      const parsed = fileListResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        logger.error(`Received malformed files:list:response from device ${device.id}`, { payload });
+        return;
+      }
+
+      fileService.resolveListResponse(parsed.data.requestId, parsed.data.entries);
+    });
+
+    socket.on("files:list:error", (payload) => {
+      const parsed = fileListErrorSchema.safeParse(payload);
+      if (!parsed.success) {
+        logger.error(`Received malformed files:list:error from device ${device.id}`, { payload });
+        return;
+      }
+
+      fileService.rejectListResponse(parsed.data.requestId, parsed.data.error);
+    });
+
+    // The agent's Socket.IO client library can only send a single Payload
+    // per emit - no variant mixes text and binary - so the requestId is
+    // prefixed onto the binary chunk itself as a fixed 36-byte UUID string
+    // rather than sent as a separate argument (see socket_client.rs).
+    const REQUEST_ID_PREFIX_LENGTH = 36;
+
+    socket.on("files:download:chunk", (framed: unknown) => {
+      if (!Buffer.isBuffer(framed) || framed.length < REQUEST_ID_PREFIX_LENGTH) {
+        logger.error(`Received malformed files:download:chunk from device ${device.id}`);
+        return;
+      }
+
+      const requestId = framed.toString("utf8", 0, REQUEST_ID_PREFIX_LENGTH);
+      const chunk = framed.subarray(REQUEST_ID_PREFIX_LENGTH);
+      fileService.handleDownloadChunk(requestId, chunk);
+    });
+
+    socket.on("files:download:complete", (payload: unknown) => {
+      const requestId = (payload as { requestId?: unknown } | undefined)?.requestId;
+      if (typeof requestId !== "string") {
+        logger.error(`Received malformed files:download:complete from device ${device.id}`);
+        return;
+      }
+
+      fileService.handleDownloadComplete(requestId);
+    });
+
+    socket.on("files:download:error", (payload: unknown) => {
+      const data = payload as { requestId?: unknown; error?: unknown } | undefined;
+      if (typeof data?.requestId !== "string" || typeof data.error !== "string") {
+        logger.error(`Received malformed files:download:error from device ${device.id}`);
+        return;
+      }
+
+      fileService.handleDownloadError(data.requestId, data.error);
     });
 
     socket.on("disconnect", () => {

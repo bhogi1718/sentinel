@@ -73,7 +73,11 @@ pub async fn run(config_path: &Path, shutdown: CancellationToken) {
     info!("Sentinel Agent starting, connecting to {}", config.server_url);
 
     let (client_tx, client_rx) = watch::channel(None);
-    let socket_client = SocketClient::new(config.server_url.clone(), config.device_token.clone());
+    let socket_client = SocketClient::new(
+        config.server_url.clone(),
+        config.device_token.clone(),
+        std::path::PathBuf::from(&config.browse_root),
+    );
 
     let connection_task = tokio::spawn(run_connection_manager(socket_client, client_tx, shutdown.clone()));
 
