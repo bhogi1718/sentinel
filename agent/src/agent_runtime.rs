@@ -2,13 +2,13 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use windows::Win32::System::SystemInformation::GetTickCount64;
 
 use crate::config::Config;
 use crate::events;
 use crate::events::types::{EventType, ReportedEvent};
-use crate::socket_client::SocketClient;
+use crate::socket_client::{ConnectedClient, SocketClient};
 
 /// Windows tracks milliseconds elapsed since boot (GetTickCount64), not a
 /// boot timestamp directly - subtracting that duration from "now" recovers
@@ -26,13 +26,13 @@ fn system_boot_time() -> DateTime<Utc> {
 /// transparent to them. Exits promptly once `shutdown` is cancelled.
 async fn run_connection_manager(
     socket_client: SocketClient,
-    client_tx: watch::Sender<Option<rust_socketio::asynchronous::Client>>,
+    client_tx: watch::Sender<Option<ConnectedClient>>,
     shutdown: CancellationToken,
 ) {
     let mut first_connection = true;
 
     loop {
-        let (client, disconnected) = tokio::select! {
+        let (client, disconnected, force_reconnect) = tokio::select! {
             result = socket_client.connect() => result,
             _ = shutdown.cancelled() => return,
         };
@@ -40,13 +40,21 @@ async fn run_connection_manager(
         if first_connection {
             first_connection = false;
             let event = ReportedEvent::new(EventType::Boot).occurred_at(system_boot_time());
-            SocketClient::report_event(&client, event).await;
+            SocketClient::report_event(&client, event, &force_reconnect).await;
         }
 
-        let _ = client_tx.send(Some(client));
+        let _ = client_tx.send(Some((client, force_reconnect.clone())));
 
+        // Either the crate's own disconnect callback fires (server-initiated
+        // close, read-side detected failure), or a handler that failed to
+        // emit() proactively signals force_reconnect - see connect()'s doc
+        // comment for why the latter is necessary at all: a write failure
+        // alone never trips the crate's own disconnect detection.
         tokio::select! {
             _ = disconnected => {}
+            _ = force_reconnect.notified() => {
+                warn!("Forcing reconnect after a failed emit");
+            }
             _ = shutdown.cancelled() => return,
         }
 

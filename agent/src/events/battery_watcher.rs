@@ -1,4 +1,3 @@
-use rust_socketio::asynchronous::Client;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -7,7 +6,7 @@ use tracing::info;
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 
 use super::types::{EventType, ReportedEvent};
-use crate::socket_client::SocketClient;
+use crate::socket_client::{ConnectedClient, SocketClient};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -28,7 +27,7 @@ fn battery_percent() -> Option<u8> {
 /// below the threshold - re-arms once the level recovers above it, so a
 /// laptop hovering right at the threshold doesn't spam repeated events.
 /// Exits promptly once `shutdown` is cancelled.
-pub async fn run(client_rx: watch::Receiver<Option<Client>>, threshold: u8, shutdown: CancellationToken) {
+pub async fn run(client_rx: watch::Receiver<Option<ConnectedClient>>, threshold: u8, shutdown: CancellationToken) {
     let mut was_below_threshold = false;
     info!("Battery watcher started (threshold: {threshold}%)");
 
@@ -51,11 +50,12 @@ pub async fn run(client_rx: watch::Receiver<Option<Client>>, threshold: u8, shut
             let mut metadata = HashMap::new();
             metadata.insert("batteryPercent".to_string(), serde_json::json!(percent));
 
-            let client = client_rx.borrow().clone();
-            if let Some(client) = client {
+            let connected_client = client_rx.borrow().clone();
+            if let Some((client, force_reconnect)) = connected_client {
                 SocketClient::report_event(
                     &client,
                     ReportedEvent::with_metadata(EventType::BatteryLow, metadata),
+                    &force_reconnect,
                 )
                 .await;
             }

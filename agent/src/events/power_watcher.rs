@@ -1,4 +1,3 @@
-use rust_socketio::asynchronous::Client;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -10,7 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::types::{EventType, ReportedEvent};
 use super::win_message_window::MessageOnlyWindow;
-use crate::socket_client::SocketClient;
+use crate::socket_client::{ConnectedClient, SocketClient};
 
 enum PowerEvent {
     Sleep,
@@ -83,7 +82,7 @@ fn spawn_message_loop() -> mpsc::UnboundedReceiver<PowerEvent> {
 /// explicitly torn down on shutdown, since the whole process exits shortly
 /// after a Windows Service stop request anyway and it holds no resources
 /// that need graceful cleanup beyond that.
-pub async fn run(client_rx: watch::Receiver<Option<Client>>, shutdown: CancellationToken) {
+pub async fn run(client_rx: watch::Receiver<Option<ConnectedClient>>, shutdown: CancellationToken) {
     let mut rx = spawn_message_loop();
     info!("Power watcher started");
 
@@ -102,9 +101,9 @@ pub async fn run(client_rx: watch::Receiver<Option<Client>>, shutdown: Cancellat
             PowerEvent::Shutdown => EventType::Shutdown,
         };
 
-        let client = client_rx.borrow().clone();
-        if let Some(client) = client {
-            SocketClient::report_event(&client, ReportedEvent::new(event_type)).await;
+        let connected_client = client_rx.borrow().clone();
+        if let Some((client, force_reconnect)) = connected_client {
+            SocketClient::report_event(&client, ReportedEvent::new(event_type), &force_reconnect).await;
         }
     }
 }

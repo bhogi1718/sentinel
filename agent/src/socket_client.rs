@@ -1,8 +1,9 @@
 use rust_socketio::asynchronous::{Client, ClientBuilder};
 use rust_socketio::Payload;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Notify};
 use tracing::{error, info, warn};
 
 use crate::commands::executor;
@@ -12,6 +13,12 @@ use crate::files::{self, FileDownloadRequest, FileListRequest};
 use crate::processes::{self, ProcessListRequest};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+
+/// A connected client plus the handle used to force a reconnect if this
+/// client turns out to be unable to actually send (see connect()'s doc
+/// comment). Published together via the watch channel in agent_runtime.rs
+/// so every watcher that reports events has access to both.
+pub type ConnectedClient = (Client, Arc<Notify>);
 
 pub struct SocketClient {
     server_url: String,
@@ -29,9 +36,20 @@ impl SocketClient {
     }
 
     /// Connects to the /agent namespace, retrying indefinitely with a fixed
-    /// delay on failure. Returns the connected client plus a receiver that
-    /// resolves the moment the server-side "disconnect" event fires, so the
-    /// caller knows exactly when to reconnect instead of polling.
+    /// delay on failure. Returns the connected client, a receiver that
+    /// resolves the moment the server-side "disconnect" event fires, and a
+    /// shared Notify that any event handler can trigger to force an
+    /// immediate reconnect - so the caller knows exactly when to reconnect
+    /// instead of polling.
+    ///
+    /// The Notify exists because rust_socketio's disconnect callback is
+    /// purely read-driven: a failed emit() (e.g. a dead TCP connection)
+    /// does NOT flip the crate's internal connected state or fire its
+    /// disconnect callback on its own - it only returns an Err to the
+    /// caller. Without this, a single failed emit leaves the client in a
+    /// zombie state that looks "connected" forever while unable to send or
+    /// receive anything. Every handler below that emits must call
+    /// force_reconnect.notify_one() on failure rather than just logging it.
     ///
     /// Crucially, this does not return until the namespace-level "connect"
     /// event has actually fired. `ClientBuilder::connect()` resolving only
@@ -40,13 +58,14 @@ impl SocketClient {
     /// afterward. Emitting before that ack completes gets silently dropped
     /// server-side, since the socket isn't considered part of the namespace
     /// yet.
-    pub async fn connect(&self) -> (Client, oneshot::Receiver<()>) {
+    pub async fn connect(&self) -> (Client, oneshot::Receiver<()>, Arc<Notify>) {
         loop {
             let auth = serde_json::json!({ "token": self.device_token });
             let (disconnect_tx, disconnect_rx) = oneshot::channel::<()>();
             let disconnect_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(disconnect_tx)));
             let (ready_tx, ready_rx) = oneshot::channel::<()>();
             let ready_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(ready_tx)));
+            let force_reconnect = Arc::new(Notify::new());
 
             let result = ClientBuilder::new(self.server_url.clone())
                 .namespace("/agent")
@@ -70,31 +89,43 @@ impl SocketClient {
                         error!("Agent socket connect_error: {:?}", payload);
                     })
                 })
-                .on("command:execute", |payload, client| {
-                    Box::pin(async move {
-                        handle_command(payload, client).await;
-                    })
+                .on("command:execute", {
+                    let force_reconnect = force_reconnect.clone();
+                    move |payload, client| {
+                        let force_reconnect = force_reconnect.clone();
+                        Box::pin(async move {
+                            handle_command(payload, client, force_reconnect).await;
+                        })
+                    }
                 })
-                .on("process:list:request", |payload, client| {
-                    Box::pin(async move {
-                        handle_process_list_request(payload, client).await;
-                    })
+                .on("process:list:request", {
+                    let force_reconnect = force_reconnect.clone();
+                    move |payload, client| {
+                        let force_reconnect = force_reconnect.clone();
+                        Box::pin(async move {
+                            handle_process_list_request(payload, client, force_reconnect).await;
+                        })
+                    }
                 })
                 .on("files:list:request", {
                     let browse_root = self.browse_root.clone();
+                    let force_reconnect = force_reconnect.clone();
                     move |payload, client| {
                         let browse_root = browse_root.clone();
+                        let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_files_list_request(payload, client, browse_root).await;
+                            handle_files_list_request(payload, client, browse_root, force_reconnect).await;
                         })
                     }
                 })
                 .on("files:download:request", {
                     let browse_root = self.browse_root.clone();
+                    let force_reconnect = force_reconnect.clone();
                     move |payload, client| {
                         let browse_root = browse_root.clone();
+                        let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_files_download_request(payload, client, browse_root).await;
+                            handle_files_download_request(payload, client, browse_root, force_reconnect).await;
                         })
                     }
                 })
@@ -121,7 +152,7 @@ impl SocketClient {
                     match tokio::time::timeout(Duration::from_secs(10), ready_rx).await {
                         Ok(Ok(())) => {
                             info!("Connected to Sentinel backend at {}", self.server_url);
-                            return (client, disconnect_rx);
+                            return (client, disconnect_rx, force_reconnect);
                         }
                         _ => {
                             error!("Namespace connect ack not received in time. Retrying in {:?}...", RECONNECT_DELAY);
@@ -143,7 +174,7 @@ impl SocketClient {
     /// whether the server actually received and processed it, so this
     /// function does not consider the report "done" until the ack callback
     /// itself fires.
-    pub async fn report_event(client: &Client, event: ReportedEvent) {
+    pub async fn report_event(client: &Client, event: ReportedEvent, force_reconnect: &Notify) {
         const ACK_TIMEOUT: Duration = Duration::from_secs(10);
 
         let payload = match serde_json::to_value(&event) {
@@ -175,6 +206,7 @@ impl SocketClient {
 
         if let Err(e) = emit_result {
             error!("Failed to send event {:?}: {e}", event.event_type);
+            force_reconnect.notify_one();
             return;
         }
 
@@ -190,7 +222,7 @@ impl SocketClient {
 /// way to receive a Socket.IO-style ack reply from this crate (see
 /// executor module docs), so the outcome is reported back via a plain
 /// command:ack event instead, carrying the same commandId the server sent.
-async fn handle_command(payload: Payload, client: Client) {
+async fn handle_command(payload: Payload, client: Client, force_reconnect: Arc<Notify>) {
     let Payload::Text(values) = payload else {
         error!("command:execute payload was not the expected Text variant");
         return;
@@ -233,13 +265,14 @@ async fn handle_command(payload: Payload, client: Client) {
 
     if let Err(e) = client.emit("command:ack", ack_payload).await {
         error!("Failed to send command:ack: {e}");
+        force_reconnect.notify_one();
     }
 }
 
 /// Handles an incoming process:list:request from the server, replying with
 /// process:list:response. Same plain-event-plus-reply shape as commands,
 /// for the same reason: this crate can't respond to a server-initiated ack.
-async fn handle_process_list_request(payload: Payload, client: Client) {
+async fn handle_process_list_request(payload: Payload, client: Client, force_reconnect: Arc<Notify>) {
     let Payload::Text(values) = payload else {
         error!("process:list:request payload was not the expected Text variant");
         return;
@@ -276,6 +309,7 @@ async fn handle_process_list_request(payload: Payload, client: Client) {
 
     if let Err(e) = client.emit("process:list:response", response_payload).await {
         error!("Failed to send process:list:response: {e}");
+        force_reconnect.notify_one();
     }
 }
 
@@ -283,7 +317,7 @@ async fn handle_process_list_request(payload: Payload, client: Client) {
 /// files:list:response (success) or files:list:error (any failure,
 /// including a rejected path) - the server needs a definite completion of
 /// the pending request either way, or it would sit until the timeout fires.
-async fn handle_files_list_request(payload: Payload, client: Client, browse_root: PathBuf) {
+async fn handle_files_list_request(payload: Payload, client: Client, browse_root: PathBuf, force_reconnect: Arc<Notify>) {
     let Payload::Text(values) = payload else {
         error!("files:list:request payload was not the expected Text variant");
         return;
@@ -314,6 +348,7 @@ async fn handle_files_list_request(payload: Payload, client: Client, browse_root
             let payload = serde_json::json!({ "requestId": request.request_id, "entries": entries });
             if let Err(e) = client.emit("files:list:response", payload).await {
                 error!("Failed to send files:list:response: {e}");
+                force_reconnect.notify_one();
             }
         }
         Err(message) => {
@@ -321,6 +356,7 @@ async fn handle_files_list_request(payload: Payload, client: Client, browse_root
             let payload = serde_json::json!({ "requestId": request.request_id, "error": message });
             if let Err(e) = client.emit("files:list:error", payload).await {
                 error!("Failed to send files:list:error: {e}");
+                force_reconnect.notify_one();
             }
         }
     }
@@ -334,7 +370,12 @@ const DOWNLOAD_CHUNK_SIZE: usize = 64 * 1024;
 /// done on a blocking thread and handed to this async task over a bounded
 /// channel, so a slow network send applies backpressure to the file reads
 /// instead of the whole file being buffered in memory up front.
-async fn handle_files_download_request(payload: Payload, client: Client, browse_root: PathBuf) {
+async fn handle_files_download_request(
+    payload: Payload,
+    client: Client,
+    browse_root: PathBuf,
+    force_reconnect: Arc<Notify>,
+) {
     let Payload::Text(values) = payload else {
         error!("files:download:request payload was not the expected Text variant");
         return;
@@ -365,7 +406,7 @@ async fn handle_files_download_request(payload: Payload, client: Client, browse_
         Ok(path) => path,
         Err(message) => {
             error!("Download rejected for '{}': {message}", request.path);
-            send_download_error(&client, &request.request_id, &message).await;
+            send_download_error(&client, &request.request_id, &message, &force_reconnect).await;
             return;
         }
     };
@@ -416,12 +457,13 @@ async fn handle_files_download_request(payload: Payload, client: Client, browse_
 
                 if let Err(e) = client.emit("files:download:chunk", framed).await {
                     error!("Failed to send files:download:chunk: {e}");
+                    force_reconnect.notify_one();
                     return;
                 }
             }
             Err(message) => {
                 error!("Download failed for '{}': {message}", request.path);
-                send_download_error(&client, &request.request_id, &message).await;
+                send_download_error(&client, &request.request_id, &message, &force_reconnect).await;
                 return;
             }
         }
@@ -430,12 +472,14 @@ async fn handle_files_download_request(payload: Payload, client: Client, browse_
     let payload = serde_json::json!({ "requestId": request.request_id });
     if let Err(e) = client.emit("files:download:complete", payload).await {
         error!("Failed to send files:download:complete: {e}");
+        force_reconnect.notify_one();
     }
 }
 
-async fn send_download_error(client: &Client, request_id: &str, message: &str) {
+async fn send_download_error(client: &Client, request_id: &str, message: &str, force_reconnect: &Notify) {
     let payload = serde_json::json!({ "requestId": request_id, "error": message });
     if let Err(e) = client.emit("files:download:error", payload).await {
         error!("Failed to send files:download:error: {e}");
+        force_reconnect.notify_one();
     }
 }
