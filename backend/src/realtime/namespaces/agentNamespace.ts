@@ -17,6 +17,14 @@ interface AgentSocket extends Socket {
   device?: AuthenticatedDevice;
 }
 
+// Tracks which socket most recently claimed each device as online, so a
+// disconnect handler from a stale (already-superseded) socket can't
+// clobber isOnline back to false after a newer reconnect already marked it
+// true. Reconnects can arrive fast enough (a few ms apart, e.g. the
+// force-reconnect-on-failed-emit path) that the two setOnlineStatus calls
+// are not guaranteed to land in the order their sockets actually occurred.
+const latestSocketByDevice = new Map<string, string>();
+
 export function registerAgentNamespace(io: SocketIOServer): void {
   const namespace = io.of("/agent");
 
@@ -47,6 +55,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
     const device = socket.device!;
     logger.info(`Agent connected: ${device.name} (${device.id})`);
     socket.data.deviceId = device.id;
+    latestSocketByDevice.set(device.id, socket.id);
 
     deviceRepository.setOnlineStatus(device.id, true).catch((err) => {
       logger.error(`Failed to mark device ${device.id} online`, { error: err instanceof Error ? err.message : err });
@@ -158,6 +167,18 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
     socket.on("disconnect", () => {
       logger.info(`Agent disconnected: ${device.name} (${device.id})`);
+
+      // A fast reconnect (e.g. the agent's force-reconnect-on-failed-emit
+      // path) can already have a newer socket registered as "latest" by
+      // the time this fires - if so, this disconnect is stale and must not
+      // clobber isOnline back to false for a device that is, in fact,
+      // still connected via that newer socket.
+      if (latestSocketByDevice.get(device.id) !== socket.id) {
+        logger.info(`Ignoring stale disconnect for device ${device.id} (superseded by a newer connection)`);
+        return;
+      }
+      latestSocketByDevice.delete(device.id);
+
       deviceRepository.setOnlineStatus(device.id, false).catch((err) => {
         logger.error(`Failed to mark device ${device.id} offline`, { error: err instanceof Error ? err.message : err });
       });
