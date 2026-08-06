@@ -2,24 +2,34 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import { EventRow } from "@/features/events/EventRow";
 import { useEvents } from "@/features/events/useEvents";
 import { QuickActionButton } from "./QuickActionButton";
 
-const statFields = [
-  { key: "cpu", label: "CPU" },
-  { key: "ram", label: "Memory" },
-  { key: "disk", label: "Storage" },
-  { key: "battery", label: "Power" },
-] as const;
-
 export function DashboardPage() {
   const { data: device } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
+  const { data: metrics } = useMetrics(isConnected);
   const { data: recentEvents, isLoading } = useEvents({ pageSize: 6 });
   const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
   const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
+
+  const statFields = [
+    { key: "cpu", label: "CPU", percent: metrics?.cpuPercent },
+    {
+      key: "ram",
+      label: "Memory",
+      percent: metrics ? (metrics.memoryUsedBytes / metrics.memoryTotalBytes) * 100 : undefined,
+    },
+    {
+      key: "disk",
+      label: "Storage",
+      percent: metrics ? (metrics.diskUsedBytes / metrics.diskTotalBytes) * 100 : undefined,
+    },
+    { key: "battery", label: "Power", percent: metrics?.batteryPercent ?? undefined },
+  ];
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -80,18 +90,26 @@ export function DashboardPage() {
 
       {/* Resource stats */}
       <section className="grid grid-cols-2 gap-gutter">
-        {statFields.map(({ key, label }) => (
-          <div key={key} className="surface-card flex flex-col gap-sm p-md">
-            <div className="flex items-start justify-between">
-              <span className="font-mono text-label-mono uppercase text-on-surface-variant">{label}</span>
-              <span className="text-body-sm font-bold text-on-surface-variant">—</span>
+        {statFields.map(({ key, label, percent }) => {
+          const hasData = percent !== undefined && !Number.isNaN(percent);
+          const clamped = hasData ? Math.min(100, Math.max(0, percent)) : 0;
+          return (
+            <div key={key} className="surface-card flex flex-col gap-sm p-md">
+              <div className="flex items-start justify-between">
+                <span className="font-mono text-label-mono uppercase text-on-surface-variant">{label}</span>
+                <span className="text-body-sm font-bold text-on-surface-variant">
+                  {hasData ? `${clamped.toFixed(0)}%` : "—"}
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-variant">
+                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${clamped}%` }} />
+              </div>
+              <span className="font-mono text-[10px] text-on-surface-variant">
+                {hasData ? "Live" : "Awaiting agent data"}
+              </span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-variant">
-              <div className="h-full w-0 rounded-full bg-primary" />
-            </div>
-            <span className="font-mono text-[10px] text-on-surface-variant">Awaiting agent data</span>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       {/* Recent activity */}

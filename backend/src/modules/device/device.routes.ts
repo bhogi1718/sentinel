@@ -7,6 +7,7 @@ import { commandController } from "../command/command.controller";
 import { createCommandSchema } from "../command/command.validation";
 import { fileController } from "../file/file.controller";
 import { downloadFileQuerySchema, listFilesQuerySchema } from "../file/file.validation";
+import { metricsController } from "../metrics/metrics.controller";
 import { processController } from "../process/process.controller";
 import { deviceController } from "./device.controller";
 
@@ -33,3 +34,4 @@ deviceRouter.get(
   validateRequest(downloadFileQuerySchema),
   asyncHandler(fileController.download),
 );
+deviceRouter.get("/metrics", authGuard, asyncHandler(metricsController.get));

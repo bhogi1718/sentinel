@@ -9,6 +9,8 @@ import { eventService } from "../../modules/event/event.service";
 import { reportEventSchema } from "../../modules/event/event.validation";
 import { fileService } from "../../modules/file/file.service";
 import { fileListErrorSchema, fileListResponseSchema } from "../../modules/file/file.validation";
+import { metricsService } from "../../modules/metrics/metrics.service";
+import { metricsResponseSchema } from "../../modules/metrics/metrics.validation";
 import { processService } from "../../modules/process/process.service";
 import { processListResponseSchema } from "../../modules/process/process.validation";
 import { broadcastDeviceStatus } from "../socket";
@@ -96,6 +98,16 @@ export function registerAgentNamespace(io: SocketIOServer): void {
           error: err instanceof Error ? err.message : err,
         });
       }
+    });
+
+    socket.on("metrics:response", (payload) => {
+      const parsed = metricsResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        logger.error(`Received malformed metrics:response from device ${device.id}`, { payload });
+        return;
+      }
+
+      metricsService.resolveResponse(parsed.data.requestId, parsed.data.metrics);
     });
 
     socket.on("process:list:response", (payload) => {

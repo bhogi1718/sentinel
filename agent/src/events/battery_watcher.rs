@@ -11,8 +11,11 @@ use crate::socket_client::{ConnectedClient, SocketClient};
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Battery percentage as reported by Windows, or None if no battery is
-/// present (desktop PCs, or the value is unavailable).
-fn battery_percent() -> Option<u8> {
+/// present (desktop PCs, or the value is unavailable). Shared with the
+/// metrics module so both use the same Win32 call rather than duplicating
+/// it - GetSystemPowerStatus is cheap, but there's no reason for two
+/// separate implementations of the same 255-sentinel-means-absent logic.
+pub(crate) fn battery_percent() -> Option<u8> {
     let mut status = SYSTEM_POWER_STATUS::default();
     let ok = unsafe { GetSystemPowerStatus(&mut status) }.is_ok();
 

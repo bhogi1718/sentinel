@@ -3,16 +3,33 @@ import { Icon } from "@/components/ui/Icon";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import type { CommandType } from "@/api/command.api";
 
 const DEVICE_PAGE_COMMANDS: CommandType[] = ["RESTART", "LOCK", "SHUTDOWN"];
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function formatRate(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/s`;
+}
+
 export function DevicePage() {
   const { data: device } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
+  const { data: metrics } = useMetrics(isConnected);
   const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
   const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
+
+  const memoryPercent = metrics ? (metrics.memoryUsedBytes / metrics.memoryTotalBytes) * 100 : null;
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -49,9 +66,9 @@ export function DevicePage() {
             </div>
           </div>
           <div className="flex items-end gap-lg">
-            <RadialGauge percent={null} label="Awaiting data" colorClass="text-primary" />
+            <RadialGauge percent={metrics ? Math.round(metrics.cpuPercent) : null} label={metrics ? "Live" : "Awaiting data"} colorClass="text-primary" />
             <div className="h-20 flex-1 text-center text-body-sm text-on-surface-variant">
-              History appears once the laptop agent starts reporting CPU stats.
+              {metrics ? "Live processor load from the laptop agent." : "History appears once the laptop agent starts reporting CPU stats."}
             </div>
           </div>
         </div>
@@ -66,9 +83,15 @@ export function DevicePage() {
             </div>
           </div>
           <div className="flex items-end gap-lg">
-            <RadialGauge percent={null} label="Awaiting data" colorClass="text-tertiary" />
+            <RadialGauge
+              percent={memoryPercent !== null ? Math.round(memoryPercent) : null}
+              label={metrics ? "Live" : "Awaiting data"}
+              colorClass="text-tertiary"
+            />
             <div className="h-20 flex-1 text-center text-body-sm text-on-surface-variant">
-              History appears once the laptop agent starts reporting memory stats.
+              {metrics
+                ? `${formatBytes(metrics.memoryUsedBytes)} of ${formatBytes(metrics.memoryTotalBytes)} in use.`
+                : "History appears once the laptop agent starts reporting memory stats."}
             </div>
           </div>
         </div>
@@ -82,15 +105,20 @@ export function DevicePage() {
             <span className="font-mono text-label-mono uppercase tracking-wider text-on-surface">Network</span>
           </div>
           <div className="flex items-center gap-xs">
-            <span className="h-2 w-2 rounded-full bg-outline" />
-            <span className="font-mono text-label-mono text-on-surface-variant">No data yet</span>
+            <span className={`h-2 w-2 rounded-full ${metrics ? "bg-success" : "bg-outline"}`} />
+            <span className="font-mono text-label-mono text-on-surface-variant">{metrics ? "Live" : "No data yet"}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-md">
-          {["Download", "Upload", "Daily total", "Ping"].map((label) => (
+          {[
+            { label: "Download", value: metrics ? formatRate(metrics.networkDownloadBytesPerSec) : "—" },
+            { label: "Upload", value: metrics ? formatRate(metrics.networkUploadBytesPerSec) : "—" },
+            { label: "Since Boot", value: metrics ? formatBytes(metrics.networkTotalReceivedBytes + metrics.networkTotalTransmittedBytes) : "—" },
+            { label: "Ping", value: metrics?.pingMs != null ? `${metrics.pingMs} ms` : "—" },
+          ].map(({ label, value }) => (
             <div key={label} className="flex flex-col">
               <span className="font-mono text-[10px] uppercase text-on-surface-variant">{label}</span>
-              <span className="text-body-md text-on-surface-variant">—</span>
+              <span className="text-body-md text-on-surface-variant">{value}</span>
             </div>
           ))}
         </div>

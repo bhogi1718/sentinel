@@ -10,6 +10,7 @@ use crate::commands::executor;
 use crate::commands::CommandRequest;
 use crate::events::types::ReportedEvent;
 use crate::files::{self, FileDownloadRequest, FileListRequest};
+use crate::metrics::{self, MetricsRequest};
 use crate::processes::{self, ProcessListRequest};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
@@ -104,6 +105,15 @@ impl SocketClient {
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
                             handle_process_list_request(payload, client, force_reconnect).await;
+                        })
+                    }
+                })
+                .on("metrics:request", {
+                    let force_reconnect = force_reconnect.clone();
+                    move |payload, client| {
+                        let force_reconnect = force_reconnect.clone();
+                        Box::pin(async move {
+                            handle_metrics_request(payload, client, force_reconnect).await;
                         })
                     }
                 })
@@ -309,6 +319,52 @@ async fn handle_process_list_request(payload: Payload, client: Client, force_rec
 
     if let Err(e) = client.emit("process:list:response", response_payload).await {
         error!("Failed to send process:list:response: {e}");
+        force_reconnect.notify_one();
+    }
+}
+
+/// Handles an incoming metrics:request from the server, replying with
+/// metrics:response. Same plain-event-plus-reply shape as commands and
+/// processes, for the same reason: this crate can't respond to a
+/// server-initiated ack.
+async fn handle_metrics_request(payload: Payload, client: Client, force_reconnect: Arc<Notify>) {
+    let Payload::Text(values) = payload else {
+        error!("metrics:request payload was not the expected Text variant");
+        return;
+    };
+
+    let Some(first) = values.first() else {
+        error!("metrics:request payload was empty");
+        return;
+    };
+
+    let request: MetricsRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse metrics:request payload: {e}");
+            return;
+        }
+    };
+
+    info!("Collecting system metrics (request id: {})", request.request_id);
+
+    // CPU%/network sampling blocks the thread for SAMPLE_INTERVAL, and the
+    // ping is a blocking Win32 call with its own timeout - keep all of it
+    // off the async runtime's worker threads.
+    let metrics = tokio::task::spawn_blocking(metrics::collect_metrics).await.ok();
+
+    let Some(metrics) = metrics else {
+        error!("Metrics collection task panicked");
+        return;
+    };
+
+    let response_payload = serde_json::json!({
+        "requestId": request.request_id,
+        "metrics": metrics,
+    });
+
+    if let Err(e) = client.emit("metrics:response", response_payload).await {
+        error!("Failed to send metrics:response: {e}");
         force_reconnect.notify_one();
     }
 }
