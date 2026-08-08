@@ -58,7 +58,9 @@ export function formatRelativeTime(isoDate: string): string {
 }
 
 export function formatClockTime(isoDate: string): string {
-  return new Date(isoDate).toLocaleTimeString(undefined, {
+  return new Date(isoDate).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

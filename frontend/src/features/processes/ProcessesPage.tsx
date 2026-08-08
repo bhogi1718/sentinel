@@ -10,10 +10,19 @@ function formatMemory(bytes: number): string {
   return `${(mb / 1024).toFixed(2)} GB`;
 }
 
+type ProcessFilter = "all" | "apps" | "background";
+
+const FILTER_OPTIONS: { key: ProcessFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "apps", label: "Apps" },
+  { key: "background", label: "Background" },
+];
+
 export function ProcessesPage() {
   const { data: device } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<ProcessFilter>("all");
   const { data: processes, isFetching, isError, error, refetch, isFetched } = useProcesses();
 
   useEffect(() => {
@@ -24,12 +33,15 @@ export function ProcessesPage() {
 
   const filteredProcesses = useMemo(() => {
     if (!processes) return [];
-    if (!search.trim()) return processes;
+    let result = processes;
+    if (filter === "apps") result = result.filter((process) => process.isApp);
+    if (filter === "background") result = result.filter((process) => !process.isApp);
+    if (!search.trim()) return result;
     const term = search.toLowerCase();
-    return processes.filter(
+    return result.filter(
       (process) => process.name.toLowerCase().includes(term) || String(process.pid).includes(term),
     );
-  }, [processes, search]);
+  }, [processes, search, filter]);
 
   return (
     <div className="flex flex-col gap-md">
@@ -61,6 +73,23 @@ export function ProcessesPage() {
             placeholder="Filter by name or PID..."
             className="w-full rounded-xl bg-surface-container py-sm pl-xl pr-md text-body-sm text-on-surface outline-none placeholder:text-on-surface-variant/50 disabled:opacity-50"
           />
+        </div>
+
+        <div className="flex gap-xs rounded-xl bg-surface-container p-1">
+          {FILTER_OPTIONS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`flex-1 rounded-lg py-1.5 font-mono text-label-mono uppercase transition-colors ${
+                filter === key
+                  ? "bg-primary-container text-on-primary"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 

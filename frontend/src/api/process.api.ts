@@ -5,6 +5,7 @@ export interface ProcessInfo {
   name: string;
   cpuPercent: number;
   memoryBytes: number;
+  isApp: boolean;
 }
 
 export const processApi = {

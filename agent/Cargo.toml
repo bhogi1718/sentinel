@@ -7,8 +7,12 @@ edition = "2021"
 name = "sentinel-agent"
 path = "src/main.rs"
 
+[[bin]]
+name = "sentinel-agent-helper"
+path = "src/helper_main.rs"
+
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "net", "io-util"] }
 tokio-util = "0.7"
 rust_socketio = { version = "0.6", features = ["async"] }
 serde = { version = "1", features = ["derive"] }
@@ -35,5 +39,6 @@ windows = { version = "0.58", features = [
     "Win32_Security",
     "Win32_System_SystemInformation",
     "Win32_NetworkManagement_IpHelper",
+    "Win32_System_StationsAndDesktops",
 ] }
 windows-service = "0.7"

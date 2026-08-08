@@ -8,6 +8,7 @@ export const processListResponseSchema = z.object({
       name: z.string(),
       cpuPercent: z.number().nonnegative(),
       memoryBytes: z.number().nonnegative(),
+      isApp: z.boolean(),
     }),
   ),
 });

@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod events;
 mod files;
+mod helper_ipc;
 mod metrics;
 mod processes;
 mod service;
