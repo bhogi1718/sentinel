@@ -1,12 +1,15 @@
+import { useState } from "react";
 import { extractErrorMessage } from "@/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
+import { ScreenshotViewer } from "@/components/ui/ScreenshotViewer";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
+import { useScreenshot } from "@/features/device/useScreenshot";
 import type { CommandType } from "@/api/command.api";
 
 const DEVICE_PAGE_COMMANDS: CommandType[] = ["RESTART", "LOCK", "SHUTDOWN"];
@@ -30,8 +33,20 @@ export function DevicePage() {
   const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(isConnected);
   const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
   const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
+  const { imageUrl, capture, clear, isCapturing, isError: isScreenshotError, error: screenshotError } = useScreenshot();
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   const memoryPercent = metrics ? (metrics.memoryUsedBytes / metrics.memoryTotalBytes) * 100 : null;
+
+  function handleCapture(): void {
+    setViewerOpen(true);
+    capture();
+  }
+
+  function handleCloseViewer(): void {
+    setViewerOpen(false);
+    clear();
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-gutter">
@@ -141,11 +156,16 @@ export function DevicePage() {
         <div className="grid grid-cols-4 gap-sm">
           <button
             type="button"
-            disabled
-            title="Screenshots ship in a later module"
-            className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm opacity-50"
+            disabled={!isConnected || isCapturing}
+            onClick={handleCapture}
+            title={isConnected ? "Capture a screenshot" : "Device is offline"}
+            className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm transition-colors active:scale-[0.97] disabled:opacity-50 hover:bg-surface-container-high"
           >
-            <Icon name="screenshot" size={20} className="text-on-surface-variant" />
+            <Icon
+              name="screenshot"
+              size={20}
+              className={isCapturing ? "animate-pulse text-on-surface-variant" : "text-on-surface-variant"}
+            />
             <span className="font-mono text-[10px] uppercase text-on-surface">Capture</span>
           </button>
 
@@ -182,6 +202,15 @@ export function DevicePage() {
         errorMessage={errorMessage}
         onConfirm={confirm}
         onCancel={cancel}
+      />
+
+      <ScreenshotViewer
+        open={viewerOpen}
+        imageUrl={imageUrl}
+        isCapturing={isCapturing}
+        errorMessage={isScreenshotError ? extractErrorMessage(screenshotError) : null}
+        onClose={handleCloseViewer}
+        onRetry={capture}
       />
     </div>
   );

@@ -12,6 +12,7 @@ use crate::events::types::{EventType, ReportedEvent};
 use crate::files::{self, FileDownloadRequest, FileListRequest};
 use crate::metrics::{self, MetricsRequest};
 use crate::processes::{self, ProcessListRequest};
+use crate::screenshot::{self, ScreenshotRequest};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -136,6 +137,15 @@ impl SocketClient {
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
                             handle_files_download_request(payload, client, browse_root, force_reconnect).await;
+                        })
+                    }
+                })
+                .on("screenshot:request", {
+                    let force_reconnect = force_reconnect.clone();
+                    move |payload, client| {
+                        let force_reconnect = force_reconnect.clone();
+                        Box::pin(async move {
+                            handle_screenshot_request(payload, client, force_reconnect).await;
                         })
                     }
                 })
@@ -539,5 +549,63 @@ async fn send_download_error(client: &Client, request_id: &str, message: &str, f
     if let Err(e) = client.emit("files:download:error", payload).await {
         error!("Failed to send files:download:error: {e}");
         force_reconnect.notify_one();
+    }
+}
+
+/// Handles an incoming screenshot:request by capturing the full virtual
+/// screen (via the per-session helper, since this service has no
+/// interactive desktop of its own - see screenshot/mod.rs) and replying
+/// with either a binary screenshot:response or a screenshot:error. A single
+/// capture is small enough (typically a few hundred KB to a few MB PNG)
+/// that, unlike file downloads, it doesn't need chunked streaming - one
+/// binary emit, requestId-prefixed the same way download chunks are.
+async fn handle_screenshot_request(payload: Payload, client: Client, force_reconnect: Arc<Notify>) {
+    let Payload::Text(values) = payload else {
+        error!("screenshot:request payload was not the expected Text variant");
+        return;
+    };
+
+    let Some(first) = values.first() else {
+        error!("screenshot:request payload was empty");
+        return;
+    };
+
+    let request: ScreenshotRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse screenshot:request payload: {e}");
+            return;
+        }
+    };
+
+    info!("Capturing screenshot (request id: {})", request.request_id);
+
+    // GDI capture happens in the helper process (over the named pipe), but
+    // the pipe I/O this side does to reach it is itself blocking - keep it
+    // off the async runtime's worker threads like every other Win32/blocking
+    // call in this file.
+    let result = tokio::task::spawn_blocking(screenshot::capture_screenshot)
+        .await
+        .unwrap_or_else(|e| Err(format!("Screenshot capture task panicked: {e}")));
+
+    match result {
+        Ok(png_bytes) => {
+            let mut framed = Vec::with_capacity(36 + png_bytes.len());
+            framed.extend_from_slice(request.request_id.as_bytes());
+            framed.extend_from_slice(&png_bytes);
+
+            if let Err(e) = client.emit("screenshot:response", framed).await {
+                error!("Failed to send screenshot:response: {e}");
+                force_reconnect.notify_one();
+            }
+        }
+        Err(message) => {
+            error!("Screenshot capture failed: {message}");
+            let error_payload = serde_json::json!({ "requestId": request.request_id, "error": message });
+            if let Err(e) = client.emit("screenshot:error", error_payload).await {
+                error!("Failed to send screenshot:error: {e}");
+                force_reconnect.notify_one();
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@ mod files;
 mod helper_ipc;
 mod metrics;
 mod processes;
+mod screenshot;
 mod service;
 mod socket_client;
 

@@ -4,7 +4,7 @@ use std::io::Read;
 use std::time::Duration;
 use sysinfo::System;
 
-use crate::helper_ipc::{WindowedPidsResponse, PIPE_NAME};
+use crate::helper_ipc::{write_request, HelperRequest, WindowedPidsResponse, PIPE_NAME};
 
 #[derive(Debug, Deserialize)]
 pub struct ProcessListRequest {
@@ -78,8 +78,13 @@ fn fetch_windowed_pids() -> HashSet<u32> {
     let start = std::time::Instant::now();
 
     loop {
-        match std::fs::File::open(PIPE_NAME) {
+        match std::fs::OpenOptions::new().read(true).write(true).open(PIPE_NAME) {
             Ok(mut pipe) => {
+                if let Err(e) = write_request(&mut pipe, &HelperRequest::WindowedPids) {
+                    tracing::warn!("Failed to send request to helper pipe: {e}");
+                    return HashSet::new();
+                }
+
                 let mut buf = Vec::new();
                 if let Err(e) = pipe.read_to_end(&mut buf) {
                     tracing::warn!("Failed to read from helper pipe: {e}");

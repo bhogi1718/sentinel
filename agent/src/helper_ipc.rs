@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
 
 /// Named pipe the LocalSystem service listens on and the per-session
@@ -71,6 +72,19 @@ impl Drop for PipeSecurityAttributes {
     }
 }
 
+/// What the service is asking the helper to do. The client writes one of
+/// these (JSON, newline-terminated) before reading a response - originally
+/// the pipe only ever answered one fixed question (windowed PIDs) so no
+/// request payload was needed at all, but adding a second capability
+/// (screenshots) means the helper now needs to be told which one a given
+/// connection wants.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum HelperRequest {
+    WindowedPids,
+    Screenshot,
+}
+
 /// One request/response round trip: the service asks "what does the
 /// interactive desktop's window list look like right now", the helper
 /// (running in the user's own session, with natural desktop access - no
@@ -81,4 +95,27 @@ impl Drop for PipeSecurityAttributes {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowedPidsResponse {
     pub pids: Vec<u32>,
+}
+
+/// Screenshot responses are framed as `[4-byte little-endian header
+/// length][JSON header][raw PNG bytes]` rather than JSON-with-embedded-
+/// base64: a captured desktop is commonly several hundred KB to a few MB,
+/// and base64 both inflates that by a third and forces a full extra copy
+/// to encode/decode. The header carries only metadata; PNG bytes follow it
+/// as-is on the wire.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScreenshotHeader {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub png_byte_len: u32,
+}
+
+/// Writes a request as newline-terminated JSON - the wire format
+/// helper_main.rs's `read_request` expects. Shared by every synchronous
+/// pipe client (processes/mod.rs, screenshot/mod.rs) so the framing logic
+/// exists in exactly one place.
+pub fn write_request(pipe: &mut impl Write, request: &HelperRequest) -> std::io::Result<()> {
+    let mut line = serde_json::to_vec(request)?;
+    line.push(b'\n');
+    pipe.write_all(&line)
 }

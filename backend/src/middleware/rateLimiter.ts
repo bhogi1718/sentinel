@@ -43,3 +43,15 @@ export const downloadRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many downloads requested, try again later")),
 });
+
+// Each capture round-trips through GDI + PNG encoding on the agent side
+// (via the per-session helper) and produces a multi-hundred-KB-to-few-MB
+// payload - capped tighter than general traffic for the same resource-cost
+// reason as commandRateLimiter.
+export const screenshotRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 10 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many screenshots requested, try again later")),
+});

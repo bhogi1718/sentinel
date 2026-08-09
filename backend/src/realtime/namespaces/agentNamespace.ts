@@ -13,6 +13,8 @@ import { metricsService } from "../../modules/metrics/metrics.service";
 import { metricsResponseSchema } from "../../modules/metrics/metrics.validation";
 import { processService } from "../../modules/process/process.service";
 import { processListResponseSchema } from "../../modules/process/process.validation";
+import { screenshotService } from "../../modules/screenshot/screenshot.service";
+import { screenshotErrorSchema } from "../../modules/screenshot/screenshot.validation";
 import { broadcastDeviceStatus } from "../socket";
 
 export interface AgentSocketData {
@@ -188,6 +190,30 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       }
 
       fileService.handleDownloadError(data.requestId, data.error);
+    });
+
+    // A screenshot fits in a single binary emit (unlike file downloads,
+    // which chunk), so the requestId is prefixed the same way a download
+    // chunk's is - see socket_client.rs's handle_screenshot_request.
+    socket.on("screenshot:response", (framed: unknown) => {
+      if (!Buffer.isBuffer(framed) || framed.length < REQUEST_ID_PREFIX_LENGTH) {
+        logger.error(`Received malformed screenshot:response from device ${device.id}`);
+        return;
+      }
+
+      const requestId = framed.toString("utf8", 0, REQUEST_ID_PREFIX_LENGTH);
+      const pngBytes = framed.subarray(REQUEST_ID_PREFIX_LENGTH);
+      screenshotService.resolveResponse(requestId, pngBytes);
+    });
+
+    socket.on("screenshot:error", (payload: unknown) => {
+      const parsed = screenshotErrorSchema.safeParse(payload);
+      if (!parsed.success) {
+        logger.error(`Received malformed screenshot:error from device ${device.id}`, { payload });
+        return;
+      }
+
+      screenshotService.rejectResponse(parsed.data.requestId, parsed.data.error);
     });
 
     socket.on("disconnect", () => {

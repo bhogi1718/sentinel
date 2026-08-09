@@ -23,6 +23,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 sysinfo = "0.32"
+png = "0.17"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -41,5 +42,7 @@ windows = { version = "0.58", features = [
     "Win32_System_SystemInformation",
     "Win32_NetworkManagement_IpHelper",
     "Win32_System_StationsAndDesktops",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_HiDpi",
 ] }
 windows-service = "0.7"

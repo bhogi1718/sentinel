@@ -10,7 +10,13 @@ module.exports = [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: "./tsconfig.json",
+        // Lint-time only, wider than tsconfig.json - that one excludes
+        // *.test.ts/src/test so the production build (tsc -p tsconfig.json)
+        // never tries to compile Vitest-only files against a machine that
+        // may not have vitest installed (devDependencies can be omitted in
+        // production installs). ESLint's type-aware rules still need every
+        // source file, tests included, to be part of *some* project.
+        project: "./tsconfig.eslint.json",
         tsconfigRootDir: __dirname,
         sourceType: "module",
       },
