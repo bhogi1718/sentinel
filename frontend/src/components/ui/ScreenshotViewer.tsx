@@ -39,14 +39,27 @@ export function ScreenshotViewer({ open, imageUrl, isCapturing, errorMessage, on
                   Device Screenshot
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close screenshot viewer"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-              >
-                <Icon name="close" size={18} />
-              </button>
+              <div className="flex items-center gap-xs">
+                {imageUrl && !isCapturing && !errorMessage && (
+                  <a
+                    href={imageUrl}
+                    download={`sentinel-screenshot-${Date.now()}.png`}
+                    aria-label="Download screenshot"
+                    title="Download"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                  >
+                    <Icon name="download" size={18} />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close screenshot viewer"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                >
+                  <Icon name="close" size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="flex min-h-[240px] flex-1 items-center justify-center overflow-auto rounded-lg bg-surface-container-low">
