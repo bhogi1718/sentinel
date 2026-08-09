@@ -40,6 +40,19 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+/// Instance-wide configuration that used to live only in .env - moved here
+/// so connecting/disconnecting/rotating an integration (currently just
+/// Telegram) never needs a server redeploy. Exactly one row is expected to
+/// ever exist, same singleton convention as User.
+model Settings {
+  id                String   @id @default(uuid())
+  telegramBotToken  String?
+  telegramChatId    String?
+  updatedAt         DateTime @updatedAt
+
+  @@map("settings")
+}
+
 /// A laptop running the Sentinel Rust agent. Only one is expected to
 /// exist for the foreseeable future, but modeling it as a first-class
 /// entity (rather than hardcoding "the laptop") gives a clean token

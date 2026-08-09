@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
+import { ApiError } from "../../common/ApiError";
 import { sendSuccess } from "../../common/ApiResponse";
 import { authService } from "./auth.service";
-import { LoginInput, RefreshInput } from "./auth.validation";
+import { ChangePasswordInput, LoginInput, RefreshInput } from "./auth.validation";
 
 export const authController = {
   async login(req: Request, res: Response): Promise<void> {
@@ -28,5 +29,14 @@ export const authController = {
   // eslint-disable-next-line @typescript-eslint/require-await
   async me(req: Request, res: Response): Promise<void> {
     sendSuccess(res, req.user);
+  },
+
+  async changePassword(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+      throw ApiError.unauthorized();
+    }
+    const { currentPassword, newPassword } = req.body as ChangePasswordInput;
+    await authService.changePassword(req.user.id, currentPassword, newPassword);
+    sendSuccess(res, { passwordChanged: true });
   },
 };

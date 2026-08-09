@@ -23,6 +23,10 @@ function parseExpiryToDate(expiresIn: string): Date {
 
 const JWT_ALGORITHM = "HS256" as const;
 
+// Matches prisma/seed.ts's SALT_ROUNDS - the initial admin password and any
+// later password change should cost the same to brute-force.
+const BCRYPT_COST = 12;
+
 function isJwtAccessPayload(payload: unknown): payload is JwtAccessPayload {
   return (
     typeof payload === "object" &&
@@ -131,6 +135,29 @@ export const authService = {
     if (stored && !stored.revokedAt) {
       await authRepository.revokeRefreshToken(stored.id);
     }
+  },
+
+  /// Verifies the caller's current password, then replaces it and revokes
+  /// every outstanding refresh token for the account - a stolen or
+  /// forgotten-about session shouldn't survive a password change. The
+  /// caller's own access token stays cryptographically valid until its
+  /// short (15m) expiry, same tradeoff logout() already accepts; the next
+  /// refresh attempt (by this session or any other) is what actually
+  /// forces re-login.
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await authRepository.findUserById(userId);
+    if (!user) {
+      throw ApiError.unauthorized("Invalid or expired access token");
+    }
+
+    const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!passwordMatches) {
+      throw ApiError.badRequest("Current password is incorrect");
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
+    await authRepository.updatePasswordHash(userId, newPasswordHash);
+    await authRepository.revokeAllRefreshTokensForUser(userId);
   },
 
   verifyAccessToken(token: string): AuthenticatedUser {

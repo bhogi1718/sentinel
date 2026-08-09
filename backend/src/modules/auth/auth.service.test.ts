@@ -9,12 +9,14 @@ vi.mock("./auth.repository", () => ({
     findRefreshTokenByHash: vi.fn(),
     revokeRefreshToken: vi.fn(),
     revokeAllRefreshTokensForUser: vi.fn(),
+    updatePasswordHash: vi.fn(),
   },
 }));
 
 vi.mock("bcrypt", () => ({
   default: {
     compare: vi.fn(),
+    hash: vi.fn(),
   },
 }));
 
@@ -121,5 +123,40 @@ describe("authService.login", () => {
 
     const decoded = authService.verifyAccessToken(tokens.accessToken);
     expect(decoded).toEqual({ id: "user-1", email: "a@b.com" });
+  });
+});
+
+describe("authService.changePassword", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("throws unauthorized when the user no longer exists", async () => {
+    mockedRepo.findUserById.mockResolvedValue(null);
+
+    await expect(authService.changePassword("user-1", "current", "new-password-123")).rejects.toThrow(ApiError);
+  });
+
+  it("throws bad request when the current password does not match", async () => {
+    mockedRepo.findUserById.mockResolvedValue({ id: "user-1", email: "a@b.com", passwordHash: "hashed" } as never);
+    mockedBcrypt.compare.mockResolvedValue(false as never);
+
+    await expect(authService.changePassword("user-1", "wrong-current", "new-password-123")).rejects.toThrow(ApiError);
+    expect(mockedRepo.updatePasswordHash).not.toHaveBeenCalled();
+    expect(mockedRepo.revokeAllRefreshTokensForUser).not.toHaveBeenCalled();
+  });
+
+  it("updates the password hash and revokes every refresh token on success", async () => {
+    mockedRepo.findUserById.mockResolvedValue({ id: "user-1", email: "a@b.com", passwordHash: "old-hash" } as never);
+    mockedBcrypt.compare.mockResolvedValue(true as never);
+    mockedBcrypt.hash.mockResolvedValue("new-hash" as never);
+    mockedRepo.updatePasswordHash.mockResolvedValue({} as never);
+    mockedRepo.revokeAllRefreshTokensForUser.mockResolvedValue({ count: 2 });
+
+    await authService.changePassword("user-1", "correct-current", "new-password-123");
+
+    expect(mockedBcrypt.hash).toHaveBeenCalledWith("new-password-123", expect.any(Number));
+    expect(mockedRepo.updatePasswordHash).toHaveBeenCalledWith("user-1", "new-hash");
+    expect(mockedRepo.revokeAllRefreshTokensForUser).toHaveBeenCalledWith("user-1");
   });
 });

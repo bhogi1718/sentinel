@@ -9,6 +9,13 @@ export const authRepository = {
     return prisma.user.findUnique({ where: { id } });
   },
 
+  updatePasswordHash(id: string, passwordHash: string) {
+    return prisma.user.update({
+      where: { id },
+      data: { passwordHash },
+    });
+  },
+
   createRefreshToken(params: { userId: string; tokenHash: string; expiresAt: Date }) {
     return prisma.refreshToken.create({
       data: {
