@@ -1,4 +1,4 @@
-import { Server as SocketIOServer, Socket } from "socket.io";
+import { DefaultEventsMap, Server as SocketIOServer, Socket } from "socket.io";
 import { logger } from "../../config/logger";
 import { commandService } from "../../modules/command/command.service";
 import { commandAckSchema } from "../../modules/command/command.validation";
@@ -15,9 +15,13 @@ import { processService } from "../../modules/process/process.service";
 import { processListResponseSchema } from "../../modules/process/process.validation";
 import { broadcastDeviceStatus } from "../socket";
 
-interface AgentSocket extends Socket {
-  device?: AuthenticatedDevice;
+export interface AgentSocketData {
+  deviceId?: string;
 }
+
+type AgentSocket = Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, AgentSocketData> & {
+  device?: AuthenticatedDevice;
+};
 
 // Tracks which socket most recently claimed each device as online, so a
 // disconnect handler from a stale (already-superseded) socket can't
@@ -30,7 +34,7 @@ const latestSocketByDevice = new Map<string, string>();
 export function registerAgentNamespace(io: SocketIOServer): void {
   const namespace = io.of("/agent");
 
-  namespace.use(async (socket: AgentSocket, next) => {
+  namespace.use((socket: AgentSocket, next) => {
     const token = socket.handshake.auth?.token as string | undefined;
 
     if (!token) {
@@ -38,19 +42,24 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       return;
     }
 
-    try {
-      const device = await deviceService.authenticate(token);
-      if (!device) {
-        next(new Error("Invalid device token"));
-        return;
-      }
+    // socket.io's middleware type expects a void-returning function, so the
+    // actual (necessarily async) authentication work runs in this inner
+    // IIFE rather than making the outer callback itself async.
+    void (async () => {
+      try {
+        const device = await deviceService.authenticate(token);
+        if (!device) {
+          next(new Error("Invalid device token"));
+          return;
+        }
 
-      socket.device = device;
-      next();
-    } catch (err) {
-      logger.error("Agent auth middleware failed", { error: err instanceof Error ? err.message : err });
-      next(new Error("Authentication temporarily unavailable"));
-    }
+        socket.device = device;
+        next();
+      } catch (err) {
+        logger.error("Agent auth middleware failed", { error: err instanceof Error ? err.message : err });
+        next(new Error("Authentication temporarily unavailable"));
+      }
+    })();
   });
 
   namespace.on("connection", (socket: AgentSocket) => {
@@ -59,12 +68,12 @@ export function registerAgentNamespace(io: SocketIOServer): void {
     socket.data.deviceId = device.id;
     latestSocketByDevice.set(device.id, socket.id);
 
-    deviceRepository.setOnlineStatus(device.id, true).catch((err) => {
+    deviceRepository.setOnlineStatus(device.id, true).catch((err: unknown) => {
       logger.error(`Failed to mark device ${device.id} online`, { error: err instanceof Error ? err.message : err });
     });
     broadcastDeviceStatus(device.id, true);
 
-    socket.on("event:report", async (payload, ack) => {
+    socket.on("event:report", (payload: unknown, ack: (response: { success: boolean; error?: string }) => void) => {
       const parsed = reportEventSchema.safeParse(payload);
 
       if (!parsed.success) {
@@ -72,35 +81,39 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      try {
-        await eventService.recordEvent(device.id, device.name, parsed.data);
-        await deviceRepository.updateLastSeen(device.id);
-        ack({ success: true });
-      } catch (err) {
-        logger.error(`Failed to record event from device ${device.id}`, {
-          error: err instanceof Error ? err.message : err,
-        });
-        ack({ success: false, error: "Failed to record event" });
-      }
+      void (async () => {
+        try {
+          await eventService.recordEvent(device.id, device.name, parsed.data);
+          await deviceRepository.updateLastSeen(device.id);
+          ack({ success: true });
+        } catch (err) {
+          logger.error(`Failed to record event from device ${device.id}`, {
+            error: err instanceof Error ? err.message : err,
+          });
+          ack({ success: false, error: "Failed to record event" });
+        }
+      })();
     });
 
-    socket.on("command:ack", async (payload) => {
+    socket.on("command:ack", (payload: unknown) => {
       const parsed = commandAckSchema.safeParse(payload);
       if (!parsed.success) {
         logger.error(`Received malformed command:ack from device ${device.id}`, { payload });
         return;
       }
 
-      try {
-        await commandService.resolveAck(parsed.data.commandId, parsed.data.success, parsed.data.error);
-      } catch (err) {
-        logger.error(`Failed to resolve command:ack from device ${device.id}`, {
-          error: err instanceof Error ? err.message : err,
-        });
-      }
+      void (async () => {
+        try {
+          await commandService.resolveAck(parsed.data.commandId, parsed.data.success, parsed.data.error);
+        } catch (err) {
+          logger.error(`Failed to resolve command:ack from device ${device.id}`, {
+            error: err instanceof Error ? err.message : err,
+          });
+        }
+      })();
     });
 
-    socket.on("metrics:response", (payload) => {
+    socket.on("metrics:response", (payload: unknown) => {
       const parsed = metricsResponseSchema.safeParse(payload);
       if (!parsed.success) {
         logger.error(`Received malformed metrics:response from device ${device.id}`, { payload });
@@ -110,7 +123,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       metricsService.resolveResponse(parsed.data.requestId, parsed.data.metrics);
     });
 
-    socket.on("process:list:response", (payload) => {
+    socket.on("process:list:response", (payload: unknown) => {
       const parsed = processListResponseSchema.safeParse(payload);
       if (!parsed.success) {
         logger.error(`Received malformed process:list:response from device ${device.id}`, { payload });
@@ -120,7 +133,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       processService.resolveResponse(parsed.data.requestId, parsed.data.processes);
     });
 
-    socket.on("files:list:response", (payload) => {
+    socket.on("files:list:response", (payload: unknown) => {
       const parsed = fileListResponseSchema.safeParse(payload);
       if (!parsed.success) {
         logger.error(`Received malformed files:list:response from device ${device.id}`, { payload });
@@ -130,7 +143,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       fileService.resolveListResponse(parsed.data.requestId, parsed.data.entries);
     });
 
-    socket.on("files:list:error", (payload) => {
+    socket.on("files:list:error", (payload: unknown) => {
       const parsed = fileListErrorSchema.safeParse(payload);
       if (!parsed.success) {
         logger.error(`Received malformed files:list:error from device ${device.id}`, { payload });
@@ -191,7 +204,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       }
       latestSocketByDevice.delete(device.id);
 
-      deviceRepository.setOnlineStatus(device.id, false).catch((err) => {
+      deviceRepository.setOnlineStatus(device.id, false).catch((err: unknown) => {
         logger.error(`Failed to mark device ${device.id} offline`, { error: err instanceof Error ? err.message : err });
       });
       broadcastDeviceStatus(device.id, false);

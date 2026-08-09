@@ -10,7 +10,11 @@ const consoleFormat = combine(
   colorize(),
   timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
   errors({ stack: true }),
-  printf(({ level, message, timestamp: ts, stack }) => {
+  printf((info) => {
+    const level = String(info.level);
+    const message = String(info.message);
+    const ts = String(info.timestamp);
+    const stack = typeof info.stack === "string" ? info.stack : undefined;
     return stack ? `${ts} [${level}] ${message}\n${stack}` : `${ts} [${level}] ${message}`;
   }),
 );

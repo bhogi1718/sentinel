@@ -29,6 +29,7 @@ export type IconName =
   | "chevron_down"
   | "language"
   | "battery_alert"
+  | "error_outline"
   | "memory"
   | "memory_alt"
   | "wifi"

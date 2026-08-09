@@ -13,9 +13,17 @@ const EVENT_LABELS: Record<EventType, { emoji: string; label: string }> = {
   BATTERY_LOW: { emoji: "🔋", label: "battery is low" },
 };
 
+// Telegram's HTML parse_mode only treats &, <, > as special (unlike full
+// HTML, quotes don't need escaping in text content), but escaping & first
+// is essential - otherwise escaping < and > afterwards would double-escape
+// any literal "&lt;" the device name happened to contain.
+export function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function formatEventMessage(deviceName: string, type: EventType, occurredAt: Date, metadata?: unknown): string {
   const { emoji, label } = EVENT_LABELS[type];
-  let message = `${emoji} <b>${deviceName}</b> ${label}`;
+  let message = `${emoji} <b>${escapeTelegramHtml(deviceName)}</b> ${label}`;
 
   if (type === "BATTERY_LOW" && metadata && typeof metadata === "object" && "batteryPercent" in metadata) {
     message += ` (${(metadata as { batteryPercent: number }).batteryPercent}%)`;

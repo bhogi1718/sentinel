@@ -1,5 +1,7 @@
+import { extractErrorMessage } from "@/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
@@ -23,16 +25,23 @@ function formatRate(bytesPerSec: number): string {
 }
 
 export function DevicePage() {
-  const { data: device } = useDeviceStatus();
+  const { data: device, isError: isDeviceError, error: deviceError, refetch: refetchDevice } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
-  const { data: metrics } = useMetrics(isConnected);
+  const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(isConnected);
   const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
   const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
 
   const memoryPercent = metrics ? (metrics.memoryUsedBytes / metrics.memoryTotalBytes) * 100 : null;
 
   return (
-    <div className="flex flex-col gap-gutter">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-gutter">
+      {isDeviceError && (
+        <InlineErrorBanner message={`Device status: ${extractErrorMessage(deviceError)}`} onRetry={() => void refetchDevice()} />
+      )}
+      {isMetricsError && (
+        <InlineErrorBanner message={`Metrics: ${extractErrorMessage(metricsError)}`} onRetry={() => void refetchMetrics()} />
+      )}
+
       {/* Device identity */}
       <div className="relative overflow-hidden rounded-xl bg-surface-container-high p-md shadow-xl">
         <div className="absolute -right-16 -top-16 h-64 w-64 animate-pulse rounded-full bg-primary/5 blur-3xl" />
@@ -55,7 +64,7 @@ export function DevicePage() {
       </div>
 
       {/* Performance gauges */}
-      <div className="grid grid-cols-1 gap-gutter">
+      <div className="grid grid-cols-1 gap-gutter md:grid-cols-2">
         <div className="flex flex-col gap-md rounded-xl bg-surface-container-low/60 p-md backdrop-blur-md">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-sm">
@@ -109,7 +118,7 @@ export function DevicePage() {
             <span className="font-mono text-label-mono text-on-surface-variant">{metrics ? "Live" : "No data yet"}</span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-md">
+        <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
           {[
             { label: "Download", value: metrics ? formatRate(metrics.networkDownloadBytesPerSec) : "—" },
             { label: "Upload", value: metrics ? formatRate(metrics.networkUploadBytesPerSec) : "—" },

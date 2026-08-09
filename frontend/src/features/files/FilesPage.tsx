@@ -37,7 +37,7 @@ export function FilesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-md">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
       <div className="flex items-center gap-xs overflow-x-auto py-1">
         <button
           type="button"
@@ -94,8 +94,19 @@ export function FilesPage() {
               key={entry.name}
               className="surface-card flex items-center gap-sm p-sm"
               onClick={entry.isDirectory ? () => openFolder(entry.name) : undefined}
+              onKeyDown={
+                entry.isDirectory
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openFolder(entry.name);
+                      }
+                    }
+                  : undefined
+              }
               role={entry.isDirectory ? "button" : undefined}
               tabIndex={entry.isDirectory ? 0 : undefined}
+              aria-label={entry.isDirectory ? `Open folder ${entry.name}` : undefined}
               style={entry.isDirectory ? { cursor: "pointer" } : undefined}
             >
               <Icon
@@ -114,6 +125,7 @@ export function FilesPage() {
                   href={fileApi.downloadUrl(currentPath ? `${currentPath}/${entry.name}` : entry.name)}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
                   title="Download"
+                  aria-label={`Download ${entry.name}`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Icon name="download" size={18} />

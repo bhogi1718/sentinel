@@ -21,16 +21,44 @@ function parseExpiryToDate(expiresIn: string): Date {
   return new Date(Date.now() + amount * multipliers[unit]);
 }
 
+const JWT_ALGORITHM = "HS256" as const;
+
+function isJwtAccessPayload(payload: unknown): payload is JwtAccessPayload {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as Record<string, unknown>).type === "access" &&
+    typeof (payload as Record<string, unknown>).sub === "string" &&
+    typeof (payload as Record<string, unknown>).email === "string"
+  );
+}
+
+function isJwtRefreshPayload(payload: unknown): payload is JwtRefreshPayload {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as Record<string, unknown>).type === "refresh" &&
+    typeof (payload as Record<string, unknown>).sub === "string" &&
+    typeof (payload as Record<string, unknown>).jti === "string"
+  );
+}
+
 function signAccessToken(user: AuthenticatedUser): string {
   const payload: JwtAccessPayload = { sub: user.id, email: user.email, type: "access" };
-  const options: SignOptions = { expiresIn: env.JWT_ACCESS_EXPIRES_IN as SignOptions["expiresIn"] };
+  const options: SignOptions = {
+    expiresIn: env.JWT_ACCESS_EXPIRES_IN as SignOptions["expiresIn"],
+    algorithm: JWT_ALGORITHM,
+  };
   return jwt.sign(payload, env.JWT_ACCESS_SECRET, options);
 }
 
 async function issueRefreshToken(userId: string): Promise<string> {
   const jti = crypto.randomUUID();
   const payload: JwtRefreshPayload = { sub: userId, jti, type: "refresh" };
-  const options: SignOptions = { expiresIn: env.JWT_REFRESH_EXPIRES_IN as SignOptions["expiresIn"] };
+  const options: SignOptions = {
+    expiresIn: env.JWT_REFRESH_EXPIRES_IN as SignOptions["expiresIn"],
+    algorithm: JWT_ALGORITHM,
+  };
   const token = jwt.sign(payload, env.JWT_REFRESH_SECRET, options);
 
   await authRepository.createRefreshToken({
@@ -55,10 +83,8 @@ export const authService = {
     }
 
     const authenticatedUser: AuthenticatedUser = { id: user.id, email: user.email };
-    const [accessToken, refreshToken] = await Promise.all([
-      signAccessToken(authenticatedUser),
-      issueRefreshToken(user.id),
-    ]);
+    const accessToken = signAccessToken(authenticatedUser);
+    const refreshToken = await issueRefreshToken(user.id);
 
     return { accessToken, refreshToken };
   },
@@ -66,8 +92,13 @@ export const authService = {
   async refresh(refreshToken: string): Promise<AuthTokens> {
     let decoded: JwtRefreshPayload;
     try {
-      decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET) as JwtRefreshPayload;
-    } catch {
+      const payload = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET, { algorithms: [JWT_ALGORITHM] });
+      if (!isJwtRefreshPayload(payload)) {
+        throw ApiError.unauthorized("Invalid or expired refresh token");
+      }
+      decoded = payload;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
       throw ApiError.unauthorized("Invalid or expired refresh token");
     }
 
@@ -88,10 +119,8 @@ export const authService = {
     await authRepository.revokeRefreshToken(stored.id);
 
     const authenticatedUser: AuthenticatedUser = { id: user.id, email: user.email };
-    const [accessToken, newRefreshToken] = await Promise.all([
-      signAccessToken(authenticatedUser),
-      issueRefreshToken(user.id),
-    ]);
+    const accessToken = signAccessToken(authenticatedUser);
+    const newRefreshToken = await issueRefreshToken(user.id);
 
     return { accessToken, refreshToken: newRefreshToken };
   },
@@ -105,11 +134,17 @@ export const authService = {
   },
 
   verifyAccessToken(token: string): AuthenticatedUser {
+    let decoded: unknown;
     try {
-      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtAccessPayload;
-      return { id: decoded.sub, email: decoded.email };
+      decoded = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: [JWT_ALGORITHM] });
     } catch {
       throw ApiError.unauthorized("Invalid or expired access token");
     }
+
+    if (!isJwtAccessPayload(decoded)) {
+      throw ApiError.unauthorized("Invalid or expired access token");
+    }
+
+    return { id: decoded.sub, email: decoded.email };
   },
 };

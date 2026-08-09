@@ -31,3 +31,15 @@ export const commandRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many commands sent, try again later")),
 });
+
+// File downloads stream over the single agent Socket.IO connection - unlike
+// stateless JSON endpoints, each one holds a pending request + open HTTP
+// response for as long as the transfer takes, so this also caps request
+// *rate* (concurrency is separately capped in file.service.ts).
+export const downloadRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 20 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many downloads requested, try again later")),
+});

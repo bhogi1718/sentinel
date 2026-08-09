@@ -13,6 +13,20 @@ use super::CommandType;
 
 const SHUTDOWN_REASON_FLAG: SHUTDOWN_REASON = SHUTDOWN_REASON(0);
 
+/// Closes the wrapped HANDLE on drop, so every early `?`-return in a
+/// function still releases it - Win32 handles aren't closed automatically
+/// like Rust-native resources, and manual `CloseHandle` calls before each
+/// return are easy to miss on new/edited error paths.
+struct OwnedHandle(HANDLE);
+
+impl Drop for OwnedHandle {
+    fn drop(&mut self) {
+        if !self.0.is_invalid() {
+            let _ = unsafe { CloseHandle(self.0) };
+        }
+    }
+}
+
 /// Executes a remote command and returns Ok(()) if the underlying Win32
 /// call reported success, Err(message) otherwise. Note that for
 /// Restart/Shutdown/LogOff, "success" only means Windows *accepted* the
@@ -61,9 +75,10 @@ fn exit_windows(flags: windows::Win32::System::Shutdown::EXIT_WINDOWS_FLAGS) -> 
 /// because Windows privileges are dormant by default even when a token is
 /// entitled to hold them - AdjustTokenPrivileges must activate them first.
 unsafe fn enable_privilege(privilege_name: &str) -> Result<(), String> {
-    let mut process_token = HANDLE::default();
-    OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut process_token)
+    let mut raw_token = HANDLE::default();
+    OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut raw_token)
         .map_err(|e| format!("OpenProcessToken failed: {e}"))?;
+    let process_token = OwnedHandle(raw_token);
 
     let mut luid = LUID::default();
     let name_wide: Vec<u16> = privilege_name.encode_utf16().chain(std::iter::once(0)).collect();
@@ -78,17 +93,15 @@ unsafe fn enable_privilege(privilege_name: &str) -> Result<(), String> {
         }],
     };
 
-    let adjust_result = AdjustTokenPrivileges(
-        process_token,
+    AdjustTokenPrivileges(
+        process_token.0,
         false,
         Some(&privileges as *const _ as *const c_void as *const _),
         0,
         None,
         None,
-    );
-
-    let _ = CloseHandle(process_token);
-    adjust_result.map_err(|e| format!("AdjustTokenPrivileges failed: {e}"))
+    )
+    .map_err(|e| format!("AdjustTokenPrivileges failed: {e}"))
 }
 
 fn sleep() -> Result<(), String> {
@@ -129,22 +142,24 @@ mod lock {
                 return Err("No active console session (no user logged in)".to_string());
             }
 
-            let mut user_token = HANDLE::default();
-            WTSQueryUserToken(session_id, &mut user_token)
+            let mut raw_user_token = HANDLE::default();
+            WTSQueryUserToken(session_id, &mut raw_user_token)
                 .map_err(|e| format!("WTSQueryUserToken failed: {e}"))?;
+            let user_token = super::OwnedHandle(raw_user_token);
 
             super::enable_privilege("SeIncreaseQuotaPrivilege")?;
 
-            let mut duplicated_token = HANDLE::default();
+            let mut raw_duplicated_token = HANDLE::default();
             DuplicateTokenEx(
-                user_token,
+                user_token.0,
                 TOKEN_ALL_ACCESS,
                 None,
                 SecurityIdentification,
                 TokenPrimary,
-                &mut duplicated_token,
+                &mut raw_duplicated_token,
             )
             .map_err(|e| format!("DuplicateTokenEx failed: {e}"))?;
+            let duplicated_token = super::OwnedHandle(raw_duplicated_token);
 
             let mut command_line: Vec<u16> = "rundll32.exe user32.dll,LockWorkStation"
                 .encode_utf16()
@@ -156,7 +171,7 @@ mod lock {
             let mut process_info = PROCESS_INFORMATION::default();
 
             let result = CreateProcessAsUserW(
-                duplicated_token,
+                duplicated_token.0,
                 None,
                 PWSTR(command_line.as_mut_ptr()),
                 None,
@@ -168,9 +183,6 @@ mod lock {
                 &startup_info,
                 &mut process_info,
             );
-
-            let _ = CloseHandle(user_token);
-            let _ = CloseHandle(duplicated_token);
 
             match result {
                 Ok(()) => {

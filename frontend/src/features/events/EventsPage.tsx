@@ -29,7 +29,7 @@ export function EventsPage() {
   );
 
   return (
-    <div className="flex flex-col gap-md">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-sm">
         <div className="surface-card flex flex-col gap-xs p-md">
@@ -107,6 +107,7 @@ export function EventsPage() {
             type="button"
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
+            aria-label="Previous page"
             className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-highest disabled:opacity-30"
           >
             <Icon name="chevron_left" size={20} />
@@ -118,6 +119,7 @@ export function EventsPage() {
             type="button"
             disabled={isPlaceholderData || page >= data.pagination.totalPages}
             onClick={() => setPage((p) => p + 1)}
+            aria-label="Next page"
             className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-highest disabled:opacity-30"
           >
             <Icon name="chevron_right" size={20} />

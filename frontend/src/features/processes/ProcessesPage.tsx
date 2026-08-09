@@ -36,15 +36,17 @@ export function ProcessesPage() {
     let result = processes;
     if (filter === "apps") result = result.filter((process) => process.isApp);
     if (filter === "background") result = result.filter((process) => !process.isApp);
-    if (!search.trim()) return result;
-    const term = search.toLowerCase();
-    return result.filter(
-      (process) => process.name.toLowerCase().includes(term) || String(process.pid).includes(term),
-    );
+    if (search.trim()) {
+      const term = search.toLowerCase();
+      result = result.filter(
+        (process) => process.name.toLowerCase().includes(term) || String(process.pid).includes(term),
+      );
+    }
+    return result.slice().sort((a, b) => b.cpuPercent - a.cpuPercent);
   }, [processes, search, filter]);
 
   return (
-    <div className="flex flex-col gap-md">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
       <div className="flex flex-col gap-sm">
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
@@ -56,40 +58,43 @@ export function ProcessesPage() {
             disabled={!isConnected || isFetching}
             onClick={() => void refetch()}
             title={isConnected ? "Refresh" : "Device is offline"}
+            aria-label={isConnected ? "Refresh process list" : "Device is offline"}
             className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
           >
             <Icon name="sync" size={20} className={isFetching ? "animate-spin" : ""} />
           </button>
         </div>
 
-        <div className="relative flex items-center">
-          <span className="absolute left-md text-on-surface-variant">
-            <Icon name="search" size={20} />
-          </span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            disabled={!processes || processes.length === 0}
-            placeholder="Filter by name or PID..."
-            className="w-full rounded-xl bg-surface-container py-sm pl-xl pr-md text-body-sm text-on-surface outline-none placeholder:text-on-surface-variant/50 disabled:opacity-50"
-          />
-        </div>
+        <div className="flex flex-col gap-sm md:flex-row md:items-center">
+          <div className="relative flex flex-1 items-center">
+            <span className="absolute left-md text-on-surface-variant">
+              <Icon name="search" size={20} />
+            </span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              disabled={!processes || processes.length === 0}
+              placeholder="Filter by name or PID..."
+              className="w-full rounded-xl bg-surface-container py-sm pl-xl pr-md text-body-sm text-on-surface outline-none placeholder:text-on-surface-variant/50 disabled:opacity-50"
+            />
+          </div>
 
-        <div className="flex gap-xs rounded-xl bg-surface-container p-1">
-          {FILTER_OPTIONS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={`flex-1 rounded-lg py-1.5 font-mono text-label-mono uppercase transition-colors ${
-                filter === key
-                  ? "bg-primary-container text-on-primary"
-                  : "text-on-surface-variant hover:text-on-surface"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <div className="flex gap-xs rounded-xl bg-surface-container p-1 md:w-72">
+            {FILTER_OPTIONS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                className={`flex-1 rounded-lg py-1.5 font-mono text-label-mono uppercase transition-colors ${
+                  filter === key
+                    ? "bg-primary-container text-on-primary"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -116,8 +121,8 @@ export function ProcessesPage() {
           </button>
         </div>
       ) : filteredProcesses.length > 0 ? (
-        <div className="surface-card overflow-hidden p-0">
-          <table className="w-full text-left">
+        <div className="surface-card overflow-x-auto p-0">
+          <table className="w-full min-w-[480px] text-left">
             <thead>
               <tr className="border-b border-outline-variant text-on-surface-variant">
                 <th className="px-md py-sm font-mono text-label-mono uppercase">Name</th>
@@ -127,21 +132,18 @@ export function ProcessesPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredProcesses
-                .slice()
-                .sort((a, b) => b.cpuPercent - a.cpuPercent)
-                .map((process) => (
-                  <tr key={process.pid} className="border-b border-outline-variant/50 last:border-0">
-                    <td className="px-md py-sm text-body-sm text-on-surface">{process.name}</td>
-                    <td className="px-md py-sm font-mono text-body-sm text-on-surface-variant">{process.pid}</td>
-                    <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
-                      {process.cpuPercent.toFixed(1)}%
-                    </td>
-                    <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
-                      {formatMemory(process.memoryBytes)}
-                    </td>
-                  </tr>
-                ))}
+              {filteredProcesses.map((process) => (
+                <tr key={process.pid} className="border-b border-outline-variant/50 last:border-0">
+                  <td className="px-md py-sm text-body-sm text-on-surface">{process.name}</td>
+                  <td className="px-md py-sm font-mono text-body-sm text-on-surface-variant">{process.pid}</td>
+                  <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
+                    {process.cpuPercent.toFixed(1)}%
+                  </td>
+                  <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
+                    {formatMemory(process.memoryBytes)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

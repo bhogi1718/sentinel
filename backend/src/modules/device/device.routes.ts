@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../common/asyncHandler";
 import { authGuard, authGuardQuery } from "../../middleware/authGuard";
-import { commandRateLimiter } from "../../middleware/rateLimiter";
+import { commandRateLimiter, downloadRateLimiter } from "../../middleware/rateLimiter";
 import { validateRequest } from "../../middleware/validateRequest";
 import { commandController } from "../command/command.controller";
 import { createCommandSchema } from "../command/command.validation";
@@ -31,6 +31,7 @@ deviceRouter.get(
 deviceRouter.get(
   "/files/download",
   authGuardQuery,
+  downloadRateLimiter,
   validateRequest(downloadFileQuerySchema),
   asyncHandler(fileController.download),
 );

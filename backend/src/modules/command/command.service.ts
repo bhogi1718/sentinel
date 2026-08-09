@@ -38,7 +38,7 @@ export const commandService = {
       commandRepository
         .updateStatus(command.id, "FAILED", "No response from agent")
         .then((updated) => broadcastCommandUpdate(updated))
-        .catch((err) => {
+        .catch((err: unknown) => {
           logger.error(`Failed to mark command ${command.id} as FAILED after timeout`, {
             error: err instanceof Error ? err.message : err,
           });

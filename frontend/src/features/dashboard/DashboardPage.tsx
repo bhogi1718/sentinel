@@ -1,5 +1,7 @@
+import { extractErrorMessage } from "@/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { useMetrics } from "@/features/device/useMetrics";
@@ -9,10 +11,12 @@ import { useEvents } from "@/features/events/useEvents";
 import { QuickActionButton } from "./QuickActionButton";
 
 export function DashboardPage() {
-  const { data: device } = useDeviceStatus();
+  const { data: device, isError: isDeviceError, error: deviceError, refetch: refetchDevice } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
-  const { data: metrics } = useMetrics(isConnected);
-  const { data: recentEvents, isLoading } = useEvents({ pageSize: 6 });
+  const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(isConnected);
+  const { data: recentEvents, isLoading, isError: isEventsError, error: eventsError, refetch: refetchEvents } = useEvents({
+    pageSize: 6,
+  });
   const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
   const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
 
@@ -32,7 +36,14 @@ export function DashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-gutter">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-gutter">
+      {isDeviceError && (
+        <InlineErrorBanner message={`Device status: ${extractErrorMessage(deviceError)}`} onRetry={() => void refetchDevice()} />
+      )}
+      {isMetricsError && (
+        <InlineErrorBanner message={`Metrics: ${extractErrorMessage(metricsError)}`} onRetry={() => void refetchMetrics()} />
+      )}
+
       {/* Status hero */}
       <section className="relative flex flex-col gap-sm overflow-hidden rounded-xl bg-surface-container-high p-md shadow-xl">
         <div className="absolute right-0 top-0 p-md text-on-surface opacity-10">
@@ -89,7 +100,7 @@ export function DashboardPage() {
       />
 
       {/* Resource stats */}
-      <section className="grid grid-cols-2 gap-gutter">
+      <section className="grid grid-cols-2 gap-gutter md:grid-cols-4">
         {statFields.map(({ key, label, percent }) => {
           const hasData = percent !== undefined && !Number.isNaN(percent);
           const clamped = hasData ? Math.min(100, Math.max(0, percent)) : 0;
@@ -124,6 +135,8 @@ export function DashboardPage() {
               <div key={i} className="h-16 animate-pulse rounded-lg bg-surface-container-low" />
             ))}
           </div>
+        ) : isEventsError ? (
+          <InlineErrorBanner message={extractErrorMessage(eventsError)} onRetry={() => void refetchEvents()} />
         ) : recentEvents && recentEvents.items.length > 0 ? (
           <div className="flex flex-col gap-xs">
             {recentEvents.items.map((event) => (

@@ -20,20 +20,29 @@ async function main(): Promise<void> {
   initSocketServer(server);
   logger.info("Socket.IO server initialized (/agent, /dashboard namespaces)");
 
-  const shutdown = async (signal: string): Promise<void> => {
+  const shutdown = (signal: string): void => {
     logger.info(`Received ${signal}, shutting down gracefully`);
-    server.close(async () => {
-      await prisma.$disconnect();
-      logger.info("Shutdown complete");
-      process.exit(0);
+    server.close(() => {
+      prisma
+        .$disconnect()
+        .then(() => {
+          logger.info("Shutdown complete");
+          process.exit(0);
+        })
+        .catch((err: unknown) => {
+          logger.error("Error while disconnecting from the database during shutdown", {
+            error: err instanceof Error ? err.message : err,
+          });
+          process.exit(1);
+        });
     });
   };
 
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   logger.error("Fatal error during startup", { error: err instanceof Error ? err.message : err });
   process.exit(1);
 });

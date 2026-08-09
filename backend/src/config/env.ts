@@ -30,7 +30,6 @@ function loadEnv() {
     const issues = parsed.error.issues
       .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
       .join("\n");
-    // eslint-disable-next-line no-console
     console.error(`Invalid environment configuration:\n${issues}`);
     process.exit(1);
   }

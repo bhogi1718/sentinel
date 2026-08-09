@@ -22,8 +22,22 @@ async fn main() {
 
     tracing::info!("Sentinel Agent Helper starting, listening on {}", helper_ipc::PIPE_NAME);
 
+    let security_attributes = match helper_ipc::PipeSecurityAttributes::build() {
+        Ok(attrs) => attrs,
+        Err(e) => {
+            tracing::error!("Failed to build pipe security descriptor: {e}. Exiting.");
+            return;
+        }
+    };
+
     loop {
-        let server = match ServerOptions::new().create(helper_ipc::PIPE_NAME) {
+        // SAFETY: security_attributes.as_ptr() points at a SECURITY_ATTRIBUTES
+        // that outlives this call (owned by the enclosing scope, dropped only
+        // at process exit), satisfying create_with_security_attributes_raw's
+        // safety contract.
+        let server = match unsafe {
+            ServerOptions::new().create_with_security_attributes_raw(helper_ipc::PIPE_NAME, security_attributes.as_ptr())
+        } {
             Ok(server) => server,
             Err(e) => {
                 tracing::error!("Failed to create named pipe server: {e}. Retrying in 5s...");

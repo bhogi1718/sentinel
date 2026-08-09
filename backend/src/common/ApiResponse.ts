@@ -15,7 +15,8 @@ export interface ApiErrorBody {
 }
 
 export function sendSuccess<T>(res: Response, data: T, statusCode = 200): Response<ApiSuccessBody<T>> {
-  return res.status(statusCode).json({ success: true, data });
+  const body: ApiSuccessBody<T> = { success: true, data };
+  return res.status(statusCode).json(body) as Response<ApiSuccessBody<T>>;
 }
 
 export function sendError(
@@ -25,5 +26,6 @@ export function sendError(
   message: string,
   details?: unknown,
 ): Response<ApiErrorBody> {
-  return res.status(statusCode).json({ success: false, error: { code, message, details } });
+  const body: ApiErrorBody = { success: false, error: { code, message, details } };
+  return res.status(statusCode).json(body) as Response<ApiErrorBody>;
 }

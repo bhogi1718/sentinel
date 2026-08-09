@@ -2,7 +2,7 @@ import { Server as HttpServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { env } from "../config/env";
 import { EventWithDevice } from "../modules/event/event.types";
-import { registerAgentNamespace } from "./namespaces/agentNamespace";
+import { AgentSocketData, registerAgentNamespace } from "./namespaces/agentNamespace";
 import { registerDashboardNamespace } from "./namespaces/dashboardNamespace";
 
 let io: SocketIOServer | undefined;
@@ -41,5 +41,5 @@ export async function findAgentSocket(deviceId: string) {
   if (!agentNamespace) return undefined;
 
   const sockets = await agentNamespace.fetchSockets();
-  return sockets.find((socket) => (socket.data as { deviceId?: string }).deviceId === deviceId);
+  return sockets.find((socket) => (socket.data as AgentSocketData).deviceId === deviceId);
 }

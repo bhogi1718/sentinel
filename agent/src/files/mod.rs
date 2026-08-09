@@ -75,16 +75,74 @@ pub fn list_directory(browse_root: &Path, relative_path: &str) -> Result<Vec<Fil
     Ok(entries)
 }
 
-/// Resolves a requested download path, returning the real file path on
-/// success or an error describing why it can't be served. Kept separate
-/// from the actual chunked-read loop (in socket_client.rs) so path safety
-/// is exercised the same way listing is, before any file handle is opened.
-pub fn resolve_download_path(browse_root: &Path, relative_path: &str) -> Result<std::path::PathBuf, String> {
+/// Resolves a requested download path and opens it, returning the open
+/// handle on success or an error describing why it can't be served.
+/// Deliberately opens the file in the same call that validates its path -
+/// splitting "validate" and "open" into two separate steps would leave a
+/// TOCTOU window where a symlink swapped into browse_root between the two
+/// could redirect the open to a target outside the validated root.
+pub fn resolve_and_open_download(browse_root: &Path, relative_path: &str) -> Result<std::fs::File, String> {
     let target = path_safety::resolve_within_root(browse_root, relative_path)?;
 
     if !target.is_file() {
         return Err("Path is not a file".to_string());
     }
 
-    Ok(target)
+    std::fs::File::open(&target).map_err(|e| format!("Failed to open file: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    fn unique_test_root() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("sentinel-files-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn resolve_and_open_download_reads_file_contents() {
+        let root = unique_test_root();
+        let file_path = root.join("hello.txt");
+        std::fs::write(&file_path, b"hello world").unwrap();
+
+        let mut file = resolve_and_open_download(&root, "hello.txt").expect("should open");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        assert_eq!(contents, "hello world");
+
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn resolve_and_open_download_rejects_directories() {
+        let root = unique_test_root();
+        let subdir = root.join("a-directory");
+        std::fs::create_dir_all(&subdir).unwrap();
+
+        let err = resolve_and_open_download(&root, "a-directory").unwrap_err();
+        assert!(err.contains("not a file"));
+    }
+
+    #[test]
+    fn resolve_and_open_download_rejects_traversal() {
+        let root = unique_test_root();
+        let err = resolve_and_open_download(&root, "../../etc/passwd").unwrap_err();
+        assert!(err.contains(".."));
+    }
+
+    #[test]
+    fn list_directory_reports_written_bytes() {
+        let root = unique_test_root();
+        let mut file = std::fs::File::create(root.join("sized.bin")).unwrap();
+        file.write_all(&[0u8; 42]).unwrap();
+        drop(file);
+
+        let entries = list_directory(&root, "").expect("should list");
+        let entry = entries.iter().find(|e| e.name == "sized.bin").expect("entry present");
+        assert_eq!(entry.size_bytes, 42);
+        assert!(!entry.is_directory);
+    }
 }

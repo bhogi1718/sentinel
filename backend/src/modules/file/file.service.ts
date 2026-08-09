@@ -6,6 +6,11 @@ import { FileEntry } from "./file.types";
 
 const FILE_LIST_TIMEOUT_MS = 15_000;
 const DOWNLOAD_START_TIMEOUT_MS = 15_000;
+// The agent serves downloads over one Socket.IO connection - too many
+// concurrent transfers just contend with each other and with every other
+// agent request (metrics, processes, commands) for the same pipe, so this
+// caps concurrency independent of the per-window rate limit on the route.
+const MAX_CONCURRENT_DOWNLOADS = 5;
 // Applies per chunk, not to the download as a whole - a large file legitimately
 // takes a while, but any individual chunk going quiet this long means the
 // agent has stalled or died mid-stream.
@@ -94,6 +99,10 @@ export const fileService = {
     path: string,
     handlers: { onChunk: (chunk: Buffer) => void; onComplete: () => void; onError: (message: string) => void },
   ): Promise<void> {
+    if (pendingDownloads.size >= MAX_CONCURRENT_DOWNLOADS) {
+      throw ApiError.tooManyRequests("Too many downloads in progress, try again shortly");
+    }
+
     const agentSocket = await getOnlineAgentSocket();
     const requestId = randomUUID();
 

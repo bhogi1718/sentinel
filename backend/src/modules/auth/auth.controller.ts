@@ -22,6 +22,10 @@ export const authController = {
     sendSuccess(res, { loggedOut: true });
   },
 
+  // No await needed - req.user is already attached by authGuard - but
+  // asyncHandler requires every handler to return a Promise so it can
+  // .catch() it, so this stays async for that shared contract.
+  // eslint-disable-next-line @typescript-eslint/require-await
   async me(req: Request, res: Response): Promise<void> {
     sendSuccess(res, req.user);
   },

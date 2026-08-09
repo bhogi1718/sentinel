@@ -7,8 +7,8 @@ use tokio::sync::{oneshot, Notify};
 use tracing::{error, info, warn};
 
 use crate::commands::executor;
-use crate::commands::CommandRequest;
-use crate::events::types::ReportedEvent;
+use crate::commands::{CommandRequest, CommandType};
+use crate::events::types::{EventType, ReportedEvent};
 use crate::files::{self, FileDownloadRequest, FileListRequest};
 use crate::metrics::{self, MetricsRequest};
 use crate::processes::{self, ProcessListRequest};
@@ -253,6 +253,16 @@ async fn handle_command(payload: Payload, client: Client, force_reconnect: Arc<N
 
     info!("Executing command {:?} (id: {})", request.command_type, request.command_id);
 
+    // Windows gives no passive observer (WM_QUERYENDSESSION, the SCM's
+    // Shutdown control) any way to tell a restart from a plain shutdown -
+    // only the caller of ExitWindowsEx knows which one it asked for. Since
+    // we're that caller for a remote Restart command, report RESTART here,
+    // before dispatching the blocking call below, rather than letting
+    // power_watcher.rs report the generic SHUTDOWN it would otherwise see.
+    if request.command_type == CommandType::Restart {
+        SocketClient::report_event(&client, ReportedEvent::new(EventType::Restart), &force_reconnect).await;
+    }
+
     // Win32 calls in executor::execute are blocking (process creation,
     // token duplication) - run them off the async runtime's worker
     // threads so a slow command can't stall event watchers or the
@@ -455,11 +465,11 @@ async fn handle_files_download_request(
     let resolved = {
         let browse_root = browse_root.clone();
         let path = request.path.clone();
-        tokio::task::spawn_blocking(move || files::resolve_download_path(&browse_root, &path)).await
+        tokio::task::spawn_blocking(move || files::resolve_and_open_download(&browse_root, &path)).await
     };
 
-    let file_path = match resolved.unwrap_or_else(|e| Err(format!("Path resolution task panicked: {e}"))) {
-        Ok(path) => path,
+    let mut file = match resolved.unwrap_or_else(|e| Err(format!("Path resolution task panicked: {e}"))) {
+        Ok(file) => file,
         Err(message) => {
             error!("Download rejected for '{}': {message}", request.path);
             send_download_error(&client, &request.request_id, &message, &force_reconnect).await;
@@ -471,14 +481,6 @@ async fn handle_files_download_request(
 
     tokio::task::spawn_blocking(move || {
         use std::io::Read;
-
-        let mut file = match std::fs::File::open(&file_path) {
-            Ok(f) => f,
-            Err(e) => {
-                let _ = tx.blocking_send(Err(format!("Failed to open file: {e}")));
-                return;
-            }
-        };
 
         let mut buffer = vec![0u8; DOWNLOAD_CHUNK_SIZE];
         loop {
