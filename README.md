@@ -2,6 +2,10 @@
 
 Personal remote laptop monitoring and control platform. Single-owner, not a SaaS product.
 
+**Live dashboard:** [http://54.83.231.177](http://54.83.231.177) — this is the real, deployed instance the laptop agent actually reports to. Use this to check on or control the laptop day-to-day.
+
+`http://localhost:5173` (started via `npm run dev` in `frontend/`) is a separate local dev environment, proxied to a **local** backend on port 5000 — it has no connection to the real agent and will show "Device is not currently connected" unless you're specifically working on frontend code against a local backend. For anything device-related, use the live dashboard link above instead.
+
 ## Stack
 
 - `backend/` — Node.js, Express, TypeScript, Prisma, Socket.IO
