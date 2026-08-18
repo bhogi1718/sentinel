@@ -2,9 +2,14 @@ import { CommandStatus, CommandType } from "@prisma/client";
 import { prisma } from "../../prisma/client";
 
 export const commandRepository = {
-  create(params: { deviceId: string; type: CommandType }) {
+  create(params: { deviceId: string; type: CommandType; targetPid?: number; targetName?: string }) {
     return prisma.command.create({
-      data: { deviceId: params.deviceId, type: params.type },
+      data: {
+        deviceId: params.deviceId,
+        type: params.type,
+        targetPid: params.targetPid,
+        targetName: params.targetName,
+      },
       include: { device: { select: { id: true, name: true } } },
     });
   },

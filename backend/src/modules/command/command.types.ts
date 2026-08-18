@@ -5,6 +5,8 @@ export { CommandType, CommandStatus };
 export interface CommandWithDevice {
   id: string;
   type: CommandType;
+  targetPid: number | null;
+  targetName: string | null;
   status: CommandStatus;
   errorMessage: string | null;
   requestedAt: Date;

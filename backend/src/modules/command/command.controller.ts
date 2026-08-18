@@ -5,8 +5,8 @@ import { CreateCommandInput } from "./command.validation";
 
 export const commandController = {
   async create(req: Request, res: Response): Promise<void> {
-    const { type } = req.body as CreateCommandInput;
-    const command = await commandService.sendCommand(type);
+    const input = req.body as CreateCommandInput;
+    const command = await commandService.sendCommand(input);
     sendSuccess(res, command, 202);
   },
 };

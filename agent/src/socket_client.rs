@@ -276,9 +276,11 @@ async fn handle_command(payload: Payload, client: Client, force_reconnect: Arc<N
     // Win32 calls in executor::execute are blocking (process creation,
     // token duplication) - run them off the async runtime's worker
     // threads so a slow command can't stall event watchers or the
-    // connection's own message pump.
-    let command_type = request.command_type;
-    let result = tokio::task::spawn_blocking(move || executor::execute(command_type))
+    // connection's own message pump. Cloned rather than moved outright
+    // since KillProcess's payload means CommandType is no longer Copy, and
+    // the log lines below still need to describe which command this was.
+    let command_type_for_log = request.command_type.clone();
+    let result = tokio::task::spawn_blocking(move || executor::execute(request.command_type))
         .await
         .unwrap_or_else(|e| Err(format!("Command execution task panicked: {e}")));
 
@@ -288,9 +290,9 @@ async fn handle_command(payload: Payload, client: Client, force_reconnect: Arc<N
     };
 
     if let Err(e) = result {
-        error!("Command {:?} failed: {e}", request.command_type);
+        error!("Command {command_type_for_log:?} failed: {e}");
     } else {
-        info!("Command {:?} executed successfully", request.command_type);
+        info!("Command {command_type_for_log:?} executed successfully");
     }
 
     if let Err(e) = client.emit("command:ack", ack_payload).await {

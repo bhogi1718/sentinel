@@ -1,8 +1,15 @@
 import type { IconName } from "@/components/ui/Icon";
 import type { CommandType } from "@/api/command.api";
 
+/// The whole-machine remote commands surfaced as quick-action buttons on
+/// the Dashboard/Device pages. KILL_PROCESS is deliberately excluded - it
+/// targets a single process rather than the machine as a whole, and only
+/// makes sense in the context of a specific row on the Processes page (see
+/// useKillProcess.ts), not as a standalone button here.
+export type WholeMachineCommandType = Exclude<CommandType, "KILL_PROCESS">;
+
 export interface RemoteCommandMeta {
-  type: CommandType;
+  type: WholeMachineCommandType;
   icon: IconName;
   label: string;
   confirmTitle: string;
@@ -10,7 +17,7 @@ export interface RemoteCommandMeta {
   danger: boolean;
 }
 
-export const REMOTE_COMMANDS: Record<CommandType, RemoteCommandMeta> = {
+export const REMOTE_COMMANDS: Record<WholeMachineCommandType, RemoteCommandMeta> = {
   LOCK: {
     type: "LOCK",
     icon: "lock",

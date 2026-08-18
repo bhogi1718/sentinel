@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { extractErrorMessage } from "@/api/client";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useKillProcess } from "./useKillProcess";
 import { useProcesses } from "./useProcesses";
+
+// Gives the agent a moment to actually terminate the process before the
+// list is re-fetched - refetching immediately on ack would often still
+// show the just-killed process, since ack only means "TerminateProcess was
+// called successfully," not that the process table has updated yet.
+const REFETCH_DELAY_AFTER_KILL_MS = 500;
 
 function formatMemory(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -24,6 +32,9 @@ export function ProcessesPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ProcessFilter>("all");
   const { data: processes, isFetching, isError, error, refetch, isFetched } = useProcesses();
+  const { pending, requestKill, confirm, cancel, isSending, errorMessage } = useKillProcess(() => {
+    setTimeout(() => void refetch(), REFETCH_DELAY_AFTER_KILL_MS);
+  });
 
   useEffect(() => {
     if (isConnected && !isFetched) {
@@ -129,6 +140,9 @@ export function ProcessesPage() {
                 <th className="px-md py-sm font-mono text-label-mono uppercase">PID</th>
                 <th className="px-md py-sm text-right font-mono text-label-mono uppercase">CPU</th>
                 <th className="px-md py-sm text-right font-mono text-label-mono uppercase">Memory</th>
+                <th className="px-md py-sm text-right font-mono text-label-mono uppercase">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -142,6 +156,17 @@ export function ProcessesPage() {
                   <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
                     {formatMemory(process.memoryBytes)}
                   </td>
+                  <td className="px-md py-sm text-right">
+                    <button
+                      type="button"
+                      onClick={() => requestKill(process.pid, process.name)}
+                      aria-label={`End task ${process.name}`}
+                      title="End task"
+                      className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                    >
+                      <Icon name="close" size={16} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -152,6 +177,23 @@ export function ProcessesPage() {
           {processes ? "No processes match your filter." : "No process data yet."}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending ? `End "${pending.name}"?` : ""}
+        description={
+          pending
+            ? `This will immediately terminate PID ${pending.pid}. Any unsaved work in this process will be lost.`
+            : ""
+        }
+        confirmLabel="End Task"
+        icon="close"
+        danger
+        isConfirming={isSending}
+        errorMessage={errorMessage}
+        onConfirm={confirm}
+        onCancel={cancel}
+      />
     </div>
   );
 }

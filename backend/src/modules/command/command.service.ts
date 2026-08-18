@@ -1,9 +1,9 @@
-import { CommandType } from "@prisma/client";
 import { ApiError } from "../../common/ApiError";
 import { logger } from "../../config/logger";
 import { deviceRepository } from "../device/device.repository";
 import { broadcastCommandUpdate, findAgentSocket } from "../../realtime/socket";
 import { commandRepository } from "./command.repository";
+import { CreateCommandInput } from "./command.validation";
 
 const COMMAND_ACK_TIMEOUT_MS = 15_000;
 
@@ -16,7 +16,8 @@ const COMMAND_ACK_TIMEOUT_MS = 15_000;
 const pendingCommands = new Map<string, NodeJS.Timeout>();
 
 export const commandService = {
-  async sendCommand(type: CommandType) {
+  async sendCommand(input: CreateCommandInput) {
+    const { type } = input;
     const device = await deviceRepository.findFirst();
     if (!device) {
       throw ApiError.notFound("No device has been registered yet");
@@ -30,7 +31,8 @@ export const commandService = {
       throw ApiError.conflict("Device is not currently connected");
     }
 
-    const command = await commandRepository.create({ deviceId: device.id, type });
+    const target = type === "KILL_PROCESS" ? { targetPid: input.pid, targetName: input.name } : {};
+    const command = await commandRepository.create({ deviceId: device.id, type, ...target });
 
     const timeout = setTimeout(() => {
       pendingCommands.delete(command.id);
@@ -46,7 +48,11 @@ export const commandService = {
     }, COMMAND_ACK_TIMEOUT_MS);
 
     pendingCommands.set(command.id, timeout);
-    agentSocket.emit("command:execute", { commandId: command.id, type });
+    // The agent's CommandType enum is #[serde(tag = "type")] with
+    // KillProcess's pid/name flattened alongside it - mirroring that flat
+    // shape here (rather than nesting a "payload" object) means the same
+    // JSON deserializes on the Rust side without a translation layer.
+    agentSocket.emit("command:execute", { commandId: command.id, ...input });
 
     const sent = await commandRepository.updateStatus(command.id, "SENT");
     broadcastCommandUpdate(sent);

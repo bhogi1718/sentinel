@@ -40,6 +40,7 @@ pub fn execute(command_type: CommandType) -> Result<(), String> {
         CommandType::LogOff => log_off_console_session(),
         CommandType::Sleep => sleep(),
         CommandType::Lock => super::executor::lock::lock_workstation(),
+        CommandType::KillProcess { pid, name } => crate::processes::kill_process(pid, &name),
     }
 }
 

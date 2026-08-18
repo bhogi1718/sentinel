@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CommandType } from "@/api/command.api";
+import type { WholeMachineCommandType } from "./remoteCommands";
 import { extractErrorMessage } from "@/api/client";
 import { useSendCommand } from "./useSendCommand";
 
@@ -8,10 +8,10 @@ import { useSendCommand } from "./useSendCommand";
 /// surfaces the error inline so the dialog can stay open on failure
 /// instead of silently closing.
 export function useRemoteCommand() {
-  const [pendingType, setPendingType] = useState<CommandType | null>(null);
+  const [pendingType, setPendingType] = useState<WholeMachineCommandType | null>(null);
   const mutation = useSendCommand();
 
-  function requestCommand(type: CommandType): void {
+  function requestCommand(type: WholeMachineCommandType): void {
     mutation.reset();
     setPendingType(type);
   }
@@ -23,9 +23,12 @@ export function useRemoteCommand() {
 
   function confirm(): void {
     if (!pendingType) return;
-    mutation.mutate(pendingType, {
-      onSuccess: () => setPendingType(null),
-    });
+    mutation.mutate(
+      { type: pendingType },
+      {
+        onSuccess: () => setPendingType(null),
+      },
+    );
   }
 
   return {

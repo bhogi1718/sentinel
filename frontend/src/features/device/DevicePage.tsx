@@ -6,13 +6,13 @@ import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { ScreenshotViewer } from "@/components/ui/ScreenshotViewer";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
+import type { WholeMachineCommandType } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import { useScreenshot } from "@/features/device/useScreenshot";
-import type { CommandType } from "@/api/command.api";
 
-const DEVICE_PAGE_COMMANDS: CommandType[] = ["RESTART", "LOCK", "SHUTDOWN"];
+const DEVICE_PAGE_COMMANDS: WholeMachineCommandType[] = ["RESTART", "LOCK", "SHUTDOWN"];
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
