@@ -12,6 +12,9 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("30d"),
 
+  // Comma-separated list of allowed frontend origins - Vercel gives you a
+  // stable production domain plus a per-branch preview domain, so more
+  // than one legitimate origin is the normal case here, not an edge case.
   CORS_ORIGIN: z.string().min(1, "CORS_ORIGIN is required"),
 
   ADMIN_EMAIL: z.string().email().optional(),
@@ -36,3 +39,5 @@ function loadEnv() {
 
 export const env = loadEnv();
 export type Env = typeof env;
+
+export const corsOrigins: string[] = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
