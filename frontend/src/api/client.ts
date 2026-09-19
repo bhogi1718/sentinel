@@ -1,4 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { API_BASE_URL } from "@/lib/apiConfig";
 import type { ApiErrorBody } from "@/types/api";
 import { tokenStorage } from "./tokenStorage";
 
@@ -18,7 +19,7 @@ export function setUnauthorizedHandler(handler: () => void): void {
 }
 
 export const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: `${API_BASE_URL}/api`,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -42,7 +43,7 @@ async function refreshAccessToken(): Promise<string> {
   }
 
   const response = await axios.post<{ success: true; data: { accessToken: string; refreshToken: string } }>(
-    "/api/auth/refresh",
+    `${API_BASE_URL}/api/auth/refresh`,
     { refreshToken },
   );
 

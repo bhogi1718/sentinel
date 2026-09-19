@@ -1,4 +1,5 @@
 import { apiClient, getAccessToken } from "./client";
+import { API_BASE_URL } from "@/lib/apiConfig";
 
 export interface FileEntry {
   name: string;
@@ -22,6 +23,6 @@ export const fileApi = {
   downloadUrl(path: string): string {
     const token = getAccessToken() ?? "";
     const params = new URLSearchParams({ path, token });
-    return `/api/device/files/download?${params.toString()}`;
+    return `${API_BASE_URL}/api/device/files/download?${params.toString()}`;
   },
 };

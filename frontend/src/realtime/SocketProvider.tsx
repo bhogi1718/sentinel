@@ -7,6 +7,7 @@ import { getAccessToken } from "@/api/client";
 import type { Command } from "@/api/command.api";
 import type { DeviceStatus } from "@/api/device.api";
 import { useAuth } from "@/features/auth/useAuth";
+import { SOCKET_BASE_URL } from "@/lib/apiConfig";
 import { DEVICE_STATUS_QUERY_KEY } from "@/features/device/useDeviceStatus";
 import type { PaginatedEvents, SentinelEvent } from "@/types/event";
 import { SocketContext } from "./SocketContext";
@@ -23,7 +24,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     }
 
     const accessToken = getAccessToken();
-    const dashboardSocket = io("/dashboard", {
+    const dashboardSocket = io(`${SOCKET_BASE_URL}/dashboard`, {
       auth: { token: accessToken },
       transports: ["websocket"],
     });

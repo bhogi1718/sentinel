@@ -1,6 +1,6 @@
 import { Server as HttpServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
-import { env } from "../config/env";
+import { corsOrigins } from "../config/env";
 import { EventWithDevice } from "../modules/event/event.types";
 import { AgentSocketData, registerAgentNamespace } from "./namespaces/agentNamespace";
 import { registerDashboardNamespace } from "./namespaces/dashboardNamespace";
@@ -10,7 +10,7 @@ let io: SocketIOServer | undefined;
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: env.CORS_ORIGIN,
+      origin: corsOrigins,
       credentials: true,
     },
   });
