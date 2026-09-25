@@ -137,7 +137,7 @@ Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Rend
 ### 2. Backend — Render
 
 1. Create an account at [render.com](https://render.com), connect your GitHub account, **New → Web Service**, pick this repo.
-2. **Root Directory:** `backend`. **Runtime:** Node. **Build Command:** `npm ci && npm run build` (`npm ci` installs exactly what's in `package-lock.json` — no surprise version drift on a fresh install; `build` already runs `prisma generate` internally). **Start Command:** `npm run prisma:deploy && npm run start`.
+2. **Root Directory:** `backend`. **Runtime:** Node. **Build Command:** `npm ci --include=dev && npm run build` (`npm ci` installs exactly what's in `package-lock.json`, no surprise version drift; `--include=dev` is required because `NODE_ENV=production` below otherwise makes npm skip `devDependencies` entirely — which is where `typescript` and every `@types/*` package live, so the build needs them even though `NODE_ENV` is `production`). **Start Command:** `npm run prisma:deploy && npm run start`.
 3. **Instance type:** Free.
 4. Add environment variables (**Environment** tab) — same keys as `backend/.env.example`: `DATABASE_URL` (from Neon above), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (your Vercel URL — you'll add this after step 3, can update later), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEVICE_NAME`, `NODE_ENV=production`.
 5. Deploy. Once live, note the assigned URL (`https://<something>.onrender.com`) — this is your `server_url` for the agent and the base for `RENDER_BACKEND_URL` below.

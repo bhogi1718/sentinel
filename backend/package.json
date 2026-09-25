@@ -4,6 +4,9 @@
   "private": true,
   "description": "Sentinel backend - personal laptop monitoring and remote management API",
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
