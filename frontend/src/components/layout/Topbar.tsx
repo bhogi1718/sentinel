@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useAuth } from "@/features/auth/useAuth";
-import { useSocket } from "@/realtime/useSocket";
+import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { navItems } from "./navItems";
 
 function currentPageLabel(pathname: string): string {
@@ -11,7 +11,8 @@ function currentPageLabel(pathname: string): string {
 
 export function Topbar() {
   const { user, logout } = useAuth();
-  const { isConnected } = useSocket();
+  const { data: deviceStatus } = useDeviceStatus();
+  const isOnline = deviceStatus?.isOnline ?? false;
   const location = useLocation();
   const [now, setNow] = useState(() => new Date());
 
@@ -32,9 +33,9 @@ export function Topbar() {
               {currentPageLabel(location.pathname)}
             </span>
             <div className="flex items-center gap-xs">
-              <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? "bg-success" : "bg-outline"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-success" : "bg-outline"}`} />
               <span className="font-mono text-label-mono uppercase text-on-surface-variant">
-                {isConnected ? "System Online" : "Reconnecting"}
+                {isOnline ? "System Online" : "Awaiting Agent"}
               </span>
             </div>
           </div>
