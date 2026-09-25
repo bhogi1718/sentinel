@@ -2,6 +2,18 @@
 
 Personal remote laptop monitoring and control platform. Single-owner, not a SaaS product.
 
+Built as a full stack: a Rust Windows Service agent reports live system state to a Node/Express backend over Socket.IO, and a React dashboard lets you check on and control the laptop from anywhere.
+
+## Features
+
+- **Live device status** — online/offline tracking, CPU/RAM/disk metrics, and a real-time event feed (boot, lock/unlock, sleep/wake, network, battery)
+- **Remote commands** — lock, restart, shutdown, sleep, log off, and kill individual processes
+- **File browser** — browse the laptop's filesystem remotely
+- **Screenshots on demand** — grab the current screen state
+- **Telegram alerts** — optional push notifications for device events, configured entirely from the dashboard
+- **Auth** — JWT-based login with refresh tokens, no forgot-password flow by design (single admin, recoverable via a local script)
+- **Runs as a Windows Service** — the agent auto-starts on boot and auto-reconnects if the backend drops
+
 **Live dashboard:** your Vercel deployment URL (e.g. `https://sentinel.vercel.app`) — this is the real, deployed instance the laptop agent actually reports to. Use this to check on or control the laptop day-to-day.
 
 `http://localhost:5173` (started via `npm run dev` in `frontend/`) is a separate local dev environment, proxied to a **local** backend on port 5000 — it has no connection to the real agent and will show "Device is not currently connected" unless you're specifically working on frontend code against a local backend. For anything device-related, use the live dashboard link above instead.
