@@ -152,7 +152,7 @@ Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Rend
 2. **Root Directory:** `backend`. **Runtime:** Node. **Build Command:** `npm ci --include=dev && npm run build` (`npm ci` installs exactly what's in `package-lock.json`, no surprise version drift; `--include=dev` is required because `NODE_ENV=production` below otherwise makes npm skip `devDependencies` entirely — which is where `typescript` and every `@types/*` package live, so the build needs them even though `NODE_ENV` is `production`). **Start Command:** `npm run prisma:deploy && npm run start`.
 3. **Instance type:** Free.
 4. Add environment variables (**Environment** tab) — same keys as `backend/.env.example`: `DATABASE_URL` (from Neon above), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (your Vercel URL — you'll add this after step 3, can update later), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEVICE_NAME`, `NODE_ENV=production`.
-5. Deploy. Once live, note the assigned URL (`https://<something>.onrender.com`) — this is your `server_url` for the agent and the base for `RENDER_BACKEND_URL` below.
+5. Deploy. Once live, note the assigned URL (`https://<something>.onrender.com`) — this is your `server_url` for the agent and the URL you'll monitor in step 4.
 6. Run the one-time seed against the new database: from your machine, temporarily point `backend/.env`'s `DATABASE_URL` at the same Neon connection string and run `cd backend && npm run seed` (prints the device token once — save it for the agent).
 
 ### 3. Frontend — Vercel
@@ -165,13 +165,18 @@ Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Rend
 
 ### 4. Keep the backend awake (free tier)
 
-Render's free web service sleeps after ~15 minutes idle, which would drop the agent's persistent connection. `.github/workflows/keep-alive.yml` pings `/health` every 10 minutes to prevent that.
+Render's free web service sleeps after ~15 minutes idle, which would drop the agent's persistent connection.
 
-1. **GitHub repo → Settings → Secrets and variables → Actions → Variables → New repository variable**
-2. Name: `RENDER_BACKEND_URL`, Value: your Render URL from step 2.5 (no trailing slash)
-3. Confirm it's running: **Actions tab → Keep Render backend awake → Run workflow** (manual trigger), should succeed immediately.
+**Do not use a GitHub Actions scheduled workflow for this** — it was the original approach here, but GitHub does not guarantee tight schedules (`*/10 * * * *`) actually fire every 10 minutes. In practice, on a low-activity repo, GitHub silently throttles it to once every few **hours**, which is nowhere near frequent enough — the backend still sleeps and wakes repeatedly between pings, which is exactly what caused the agent's real connection problems during this project's migration.
 
-**Gotcha:** GitHub disables scheduled workflows after 60 days of repo inactivity. If the agent suddenly starts showing long "offline" stretches after a quiet period, check **Actions** and re-enable the workflow before assuming something broke.
+Use **UptimeRobot** instead (free tier, purpose-built for this, reliable 5-minute interval):
+
+1. Sign up at [uptimerobot.com](https://uptimerobot.com)
+2. **Add New Monitor**
+3. **Monitor Type:** HTTP(s)
+4. **URL:** `https://<your-render-url>/health`
+5. **Monitoring Interval:** 5 minutes
+6. Save. UptimeRobot's dashboard also gives you uptime history and can email you if the backend ever goes down for real (not just idle-sleep) — a nice side benefit the GitHub Actions approach never had.
 
 ### 5. Point the agent at production
 
