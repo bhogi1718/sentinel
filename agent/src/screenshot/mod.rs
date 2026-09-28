@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::io::Read;
 use std::time::Duration;
 
-use crate::helper_ipc::{write_request, HelperRequest, ScreenshotHeader, PIPE_NAME};
+use crate::helper_ipc::{run_with_timeout, write_request, HelperRequest, ScreenshotHeader, PIPE_NAME};
 
 #[derive(Debug, Deserialize)]
 pub struct ScreenshotRequest {
@@ -22,7 +22,27 @@ const HELPER_TIMEOUT: Duration = Duration::from_secs(10);
 /// only exist from a process running in the interactive session - see
 /// processes/windows_apps.rs for the same Session-0 isolation constraint
 /// applied to window enumeration.
+///
+/// The whole attempt is bounded by `run_with_timeout`, not just the connect
+/// retry loop - see its doc comment. Without that outer bound, a helper
+/// that accepted the pipe connection but then wedged (or had its session go
+/// non-interactive) mid-capture would leave `read_screenshot_response`
+/// blocked on `read_exact` forever, which - since this runs inside
+/// `spawn_blocking` under a socket.io event callback that's awaited inline
+/// on the connection's single packet-processing task - would freeze the
+/// whole agent, not just this one screenshot request.
 pub fn capture_screenshot() -> Result<Vec<u8>, String> {
+    match run_with_timeout(HELPER_TIMEOUT, connect_and_capture_screenshot) {
+        Some(result) => result,
+        None => Err(format!(
+            "Timed out after {HELPER_TIMEOUT:?} waiting for the helper pipe - it accepted a \
+             connection but never responded (helper may be wedged or its session may have gone \
+             non-interactive mid-capture)"
+        )),
+    }
+}
+
+fn connect_and_capture_screenshot() -> Result<Vec<u8>, String> {
     let start = std::time::Instant::now();
 
     loop {

@@ -1,20 +1,28 @@
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::time::Duration;
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
 
-/// Named pipe the LocalSystem service listens on and the per-session
-/// helper connects out to. A LocalSystem process can always create a pipe
-/// server; the interactive user's helper process just needs to be able to
-/// connect as a client, which the default pipe DACL already permits for
-/// same-machine connections from an authenticated user.
+/// Named pipe the per-session helper (helper_main.rs) listens on as a pipe
+/// server, and the LocalSystem service (this binary, processes/mod.rs and
+/// screenshot/mod.rs) connects to as a client. It has to be this way round
+/// even though the service runs with far higher privilege: creating/owning
+/// a named pipe server needs no special session access, but only a process
+/// actually running *inside* the interactive session (the helper) can reach
+/// that session's desktop for window enumeration or screen capture - a
+/// LocalSystem service has no desktop of its own to answer from (see
+/// windows_apps.rs for why). So the low-privilege, session-bound process is
+/// the server here, and the high-privilege, session-less service is the
+/// client reaching out to it.
 pub const PIPE_NAME: &str = r"\\.\pipe\SentinelAgentHelper";
 
 /// Windows' default pipe DACL grants access to any authenticated local
-/// user, wider than needed - the helper always runs as whoever is
-/// interactively logged in, so the pipe only needs to be reachable by
-/// SYSTEM (this server's own process) and the INTERACTIVE well-known
-/// group. GA (Generic All) rather than a narrower right because both ends
-/// need read+write+FILE_CREATE_PIPE_INSTANCE for reconnect.
+/// user, wider than needed - the pipe only needs to be reachable by SYSTEM
+/// (the service, which connects in as a client) and the INTERACTIVE
+/// well-known group (the helper, which creates/owns the pipe server as
+/// whoever is interactively logged in). GA (Generic All) rather than a
+/// narrower right because both ends need read+write+FILE_CREATE_PIPE_INSTANCE
+/// for reconnect.
 pub const PIPE_SECURITY_DESCRIPTOR_SDDL: &str = "D:(A;;GA;;;SY)(A;;GA;;;IU)";
 
 /// Builds the win32 security attributes for
@@ -118,4 +126,78 @@ pub fn write_request(pipe: &mut impl Write, request: &HelperRequest) -> std::io:
     let mut line = serde_json::to_vec(request)?;
     line.push(b'\n');
     pipe.write_all(&line)
+}
+
+/// Runs `f` on a dedicated thread and waits at most `timeout` for it to
+/// finish, returning `None` on timeout.
+///
+/// Exists because talking to the helper over the pipe (`std::fs::File`'s
+/// blocking `read`/`write`) has no built-in timeout of any kind: Windows
+/// named-pipe reads in byte/blocking mode block until data arrives or the
+/// pipe handle is closed, with no way to attach a deadline via the
+/// synchronous std API. Once `OpenOptions::open` succeeds (the helper *is*
+/// running and accepted the connection), everything after that point -
+/// `write_request`, `read_to_end`/`read_exact` - can hang forever if the
+/// helper then never responds and never closes its end: e.g. it is wedged
+/// mid-request, or its session went non-interactive (a logoff, an RDP
+/// session switch, Fast User Switching) partway through a desktop/GDI call
+/// that itself has no timeout. Without this wrapper that hang propagates
+/// all the way up through `tokio::task::spawn_blocking` to the async
+/// handler awaiting it in socket_client.rs, and from there - since every
+/// socket.io event callback runs inline on the single task that drives the
+/// whole connection's packet stream - to freezing the entire agent
+/// (metrics, commands, reconnect-on-disconnect, everything) while the
+/// Windows Service itself stays reported as "Running".
+///
+/// On timeout, `f`'s thread is simply abandoned: it keeps running, still
+/// pinned to whatever blocking call it's stuck in, and its eventual result
+/// (if any) is silently dropped when the channel send fails. That's a
+/// bounded, rare per-call thread leak - one OS thread sitting idle in a
+/// pipe read until the helper process is eventually restarted or killed -
+/// which is a small price for guaranteeing the *caller* never blocks past
+/// `timeout` no matter how badly the helper misbehaves.
+pub fn run_with_timeout<T, F>(timeout: Duration, f: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        // Errors only if the receiver already timed out and was dropped -
+        // nothing to do at that point, the result is simply discarded.
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(timeout).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_with_timeout_returns_the_result_when_the_closure_finishes_in_time() {
+        let result = run_with_timeout(Duration::from_secs(1), || 42);
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    fn run_with_timeout_bounds_a_closure_that_never_returns() {
+        // Simulates exactly the bug this exists to prevent: a helper-pipe
+        // read that blocks forever because the helper accepted the
+        // connection but then never responded (see fetch_windowed_pids /
+        // capture_screenshot). Before this wrapper existed, that call had
+        // no way to bound itself at all - the caller, and transitively the
+        // entire agent's socket.io connection (see socket_client.rs's
+        // `connect()` doc comment for why), would hang right along with it.
+        let start = std::time::Instant::now();
+        let result: Option<()> = run_with_timeout(Duration::from_millis(200), || {
+            std::thread::sleep(Duration::from_secs(3600));
+        });
+        assert_eq!(result, None);
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "run_with_timeout took {:?}, expected it to return promptly after its 200ms timeout",
+            start.elapsed(),
+        );
+    }
 }

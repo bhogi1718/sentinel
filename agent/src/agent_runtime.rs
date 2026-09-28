@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 use chrono::{DateTime, Utc};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -8,7 +9,42 @@ use windows::Win32::System::SystemInformation::GetTickCount64;
 use crate::config::Config;
 use crate::events;
 use crate::events::types::{EventType, ReportedEvent};
-use crate::socket_client::{ConnectedClient, SocketClient};
+use crate::socket_client::{ConnectedClient, LastActivity, SocketClient};
+
+/// If the connection hasn't seen a single named event from the server in
+/// this long, force a reconnect even though nothing has actively failed.
+///
+/// This is defense in depth, not the primary fix for the helper-pipe hang
+/// (that's the `run_with_timeout` bound in processes/mod.rs and
+/// screenshot/mod.rs, plus spawning every handler in socket_client.rs so
+/// one stuck handler can no longer wedge the whole connection - see that
+/// module's `connect()` doc comment). This watchdog exists for whatever
+/// *this* incident didn't cover: some other, currently-unknown way for the
+/// connection to go quietly dead without either the crate's own read-driven
+/// disconnect detection or our `force_reconnect` Notify ever firing. The
+/// production incident that prompted this went undetected for hours, with
+/// the OS process reporting "Running" the whole time - fifteen minutes of
+/// silence given the server pushes metrics every 15-30s in normal operation
+/// is already a wildly abnormal gap, but still generous enough to never
+/// misfire during legitimate quiet periods (e.g. no dashboard open, no
+/// pending commands).
+const WATCHDOG_IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const WATCHDOG_CHECK_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Resolves once `last_activity` hasn't been touched for `WATCHDOG_IDLE_TIMEOUT`.
+/// Lives entirely inside the `tokio::select!` in `run_connection_manager` -
+/// dropped and recreated fresh on every reconnect, so there's no separate
+/// task lifecycle to manage and nothing to leak between connections.
+async fn watch_for_idle_connection(last_activity: LastActivity) {
+    let mut interval = tokio::time::interval(WATCHDOG_CHECK_INTERVAL);
+    loop {
+        interval.tick().await;
+        let idle_for = last_activity.lock().map(|guard| guard.elapsed()).unwrap_or_default();
+        if idle_for >= WATCHDOG_IDLE_TIMEOUT {
+            return;
+        }
+    }
+}
 
 /// Windows tracks milliseconds elapsed since boot (GetTickCount64), not a
 /// boot timestamp directly - subtracting that duration from "now" recovers
@@ -68,7 +104,7 @@ async fn run_connection_manager(
     let mut first_connection = true;
 
     loop {
-        let (client, disconnected, force_reconnect) = tokio::select! {
+        let (client, disconnected, force_reconnect, last_activity) = tokio::select! {
             result = socket_client.connect() => result,
             _ = shutdown.cancelled() => return,
         };
@@ -87,14 +123,22 @@ async fn run_connection_manager(
         let _ = client_tx.send(Some((client, force_reconnect.clone())));
 
         // Either the crate's own disconnect callback fires (server-initiated
-        // close, read-side detected failure), or a handler that failed to
+        // close, read-side detected failure), a handler that failed to
         // emit() proactively signals force_reconnect - see connect()'s doc
         // comment for why the latter is necessary at all: a write failure
-        // alone never trips the crate's own disconnect detection.
+        // alone never trips the crate's own disconnect detection - or the
+        // idle watchdog trips because nothing has been heard from the
+        // server in far longer than normal operation would ever produce.
         tokio::select! {
             _ = disconnected => {}
             _ = force_reconnect.notified() => {
                 warn!("Forcing reconnect after a failed emit");
+            }
+            _ = watch_for_idle_connection(last_activity) => {
+                warn!(
+                    "No activity from the backend for over {WATCHDOG_IDLE_TIMEOUT:?} - \
+                     forcing reconnect as a precaution against a silently wedged connection"
+                );
             }
             _ = shutdown.cancelled() => return,
         }
