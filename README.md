@@ -134,6 +134,26 @@ cargo run
 
 Same binary, same logic — it detects it wasn't launched by the Windows Service Control Manager and falls back to console mode automatically. Useful when iterating on agent code, since you get live logs and Ctrl+C to stop. Logs go to stdout instead of a file in this mode.
 
+### Troubleshooting: agent can't reach the backend
+
+If the backend itself is confirmed healthy (`Invoke-RestMethod https://<your-backend>/health` succeeds instantly) but the agent log shows a repeating loop like:
+
+```
+WARN hyper_util::client::legacy::connect::http: tcp set_nodelay error: An invalid argument was supplied. (os error 10022)
+ERROR sentinel_agent::socket_client: Namespace connect ack not received in time. Retrying in 5s...
+```
+
+the `set_nodelay` warning is a red herring — `hyper-util` only logs it, it never fails the connection. The actual symptom is the namespace-ack timeout. In practice this has been caused by the **installed service running a stale binary** that predates the current `Cargo.lock`/source, hitting a Windows socket-stack quirk that a fresh build doesn't reproduce.
+
+Fix: rebuild and reinstall.
+
+```powershell
+cd agent
+.\scripts\install-service.ps1
+```
+
+The script now always stops the service and rebuilds before reinstalling (it used to skip the build if a binary already existed, which is how a stale binary could linger silently — see the script's own comments). If you're debugging this manually rather than via the script, remember the exe is locked while the service (or the helper, which runs separately per-session) is running — stop both before trying to overwrite it.
+
 ---
 
 ## Deployment

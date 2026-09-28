@@ -4,12 +4,16 @@
 
 .DESCRIPTION
     Must be run from an elevated (Administrator) PowerShell prompt.
-    Builds the release binary if it doesn't already exist, registers it as
-    a Windows Service that auto-starts on boot, configures automatic
-    restart on failure, and starts it immediately.
+    Always rebuilds the release binary from the current source tree, then
+    registers it as a Windows Service that auto-starts on boot, configures
+    automatic restart on failure, and starts it immediately.
 
     Re-running this script after the service is already installed will
-    stop, reconfigure, and restart it - safe to use for upgrades.
+    stop it first (so the rebuild can overwrite the running exe), then
+    rebuild, reconfigure, and restart it - safe to use for upgrades. Do
+    not skip the rebuild: a service left pointed at a stale binary can
+    silently drift from the checked-out source (this happened once
+    already - see README's agent troubleshooting section).
 #>
 
 $ErrorActionPreference = "Stop"
@@ -37,24 +41,10 @@ if (-not (Test-Path $ConfigSource)) {
     exit 1
 }
 
-if (-not (Test-Path $ExePath) -or -not (Test-Path $HelperExePath)) {
-    Write-Host "Release binaries not found, building..." -ForegroundColor Yellow
-    Push-Location $AgentDir
-    cargo build --release
-    Pop-Location
-    if (-not (Test-Path $ExePath)) {
-        Write-Error "Build did not produce $ExePath"
-        exit 1
-    }
-    if (-not (Test-Path $HelperExePath)) {
-        Write-Error "Build did not produce $HelperExePath"
-        exit 1
-    }
-}
-
-Copy-Item $ConfigSource $ConfigDest -Force
-Write-Host "Copied agent.toml to $ConfigDest" -ForegroundColor Green
-
+# Stop and remove any existing service *before* building - the running
+# exe is locked while the service holds it open, so building first would
+# silently leave the old binary in place (cargo can't overwrite a locked
+# file) while everything downstream assumes it just installed the new one.
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "Service already exists, stopping and removing before reinstall..." -ForegroundColor Yellow
@@ -64,6 +54,26 @@ if ($existing) {
     sc.exe delete $ServiceName | Out-Null
     Start-Sleep -Seconds 1
 }
+
+# The helper runs per-session (outside the service) and would just as
+# happily lock its own exe against the rebuild below.
+Get-Process -Name "sentinel-agent-helper" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+Write-Host "Building release binaries..." -ForegroundColor Yellow
+Push-Location $AgentDir
+cargo build --release
+Pop-Location
+if (-not (Test-Path $ExePath)) {
+    Write-Error "Build did not produce $ExePath"
+    exit 1
+}
+if (-not (Test-Path $HelperExePath)) {
+    Write-Error "Build did not produce $HelperExePath"
+    exit 1
+}
+
+Copy-Item $ConfigSource $ConfigDest -Force
+Write-Host "Copied agent.toml to $ConfigDest" -ForegroundColor Green
 
 Write-Host "Creating service..." -ForegroundColor Cyan
 New-Service `
