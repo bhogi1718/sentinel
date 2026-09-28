@@ -5,7 +5,7 @@ use std::io::Read;
 use std::time::Duration;
 use sysinfo::{Pid, System};
 
-use crate::helper_ipc::{write_request, HelperRequest, WindowedPidsResponse, PIPE_NAME};
+use crate::helper_ipc::{run_with_timeout, write_request, HelperRequest, WindowedPidsResponse, PIPE_NAME};
 
 /// Sentinel's own processes are never killable through this command - doing
 /// so would strand the session with no remote channel left to recover it
@@ -135,10 +135,33 @@ fn is_protected(name: &OsStr) -> bool {
 /// filesystem paths on the client side, so plain std::fs I/O works here -
 /// no async runtime needed for what's already a synchronous, blocking-pool
 /// code path. Returns an empty set on any failure (helper not running,
-/// pipe busy, timeout, malformed response) rather than erroring the whole
+/// pipe busy, timeout, malformed response, or the helper accepting the
+/// connection but then never responding) rather than erroring the whole
 /// process listing - "background" is a safe default for every process
 /// when the app/background split can't be determined.
+///
+/// The entire attempt (not just the connect retry loop below) is bounded
+/// by `run_with_timeout`: once connected, `read_to_end` has no timeout of
+/// its own and would otherwise block this call forever if the helper wedges
+/// mid-response instead of cleanly failing or closing the pipe (see
+/// `run_with_timeout`'s doc comment for why that's not just theoretical -
+/// a session change while the helper is mid-enumeration is a realistic way
+/// to hit exactly this).
 fn fetch_windowed_pids() -> HashSet<u32> {
+    match run_with_timeout(HELPER_TIMEOUT, connect_and_fetch_windowed_pids) {
+        Some(pids) => pids,
+        None => {
+            tracing::warn!(
+                "Timed out after {HELPER_TIMEOUT:?} waiting for the helper pipe - it accepted a \
+                 connection but never responded (helper may be wedged or its session may have \
+                 gone non-interactive mid-request). Reporting all processes as background-only."
+            );
+            HashSet::new()
+        }
+    }
+}
+
+fn connect_and_fetch_windowed_pids() -> HashSet<u32> {
     let start = std::time::Instant::now();
 
     loop {
@@ -183,6 +206,34 @@ fn fetch_windowed_pids() -> HashSet<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fetch_windowed_pids_returns_promptly_when_the_helper_is_not_running() {
+        // Reproduces the exact failure mode from the production hang: the
+        // agent asks the helper for its windowed-PID list, but nothing is
+        // listening on the pipe at all (the "Could not connect to helper
+        // pipe ... The system cannot find the file specified. (os error 2)"
+        // warning). This must return well within HELPER_TIMEOUT no matter
+        // what - if it ever hung instead, this test would hang, and in
+        // production so would the entire agent (see socket_client.rs's
+        // `connect()` doc comment: every handler used to run inline on the
+        // single task driving the whole connection, so one stuck call here
+        // froze metrics, commands, and reconnect-on-disconnect right along
+        // with it).
+        let start = std::time::Instant::now();
+        let result = fetch_windowed_pids();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < HELPER_TIMEOUT + Duration::from_secs(2),
+            "fetch_windowed_pids took {elapsed:?}, expected it to return within HELPER_TIMEOUT ({HELPER_TIMEOUT:?})",
+        );
+        // Not asserting the result is empty: if this happens to run on a
+        // machine where the real helper is actually installed and running,
+        // it would answer normally instead of hitting the not-running path.
+        // Either way is fine - what matters, and what the bug broke, is
+        // that the call returns promptly at all.
+        let _ = result;
+    }
 
     #[test]
     fn kill_process_rejects_pid_0_and_4_without_touching_sysinfo() {

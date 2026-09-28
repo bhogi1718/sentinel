@@ -1,8 +1,8 @@
 use rust_socketio::asynchronous::{Client, ClientBuilder};
 use rust_socketio::Payload;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, Notify};
 use tracing::{error, info, warn};
 
@@ -22,6 +22,21 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 /// so every watcher that reports events has access to both.
 pub type ConnectedClient = (Client, Arc<Notify>);
 
+/// Wall-clock time of the last packet this connection observed from the
+/// server (any named event - see the `on_any` registration in `connect()`),
+/// guarded by a plain (non-async) `Mutex` since updates and reads are both
+/// just a cheap `Instant` swap/copy, never held across an `.await`. Used
+/// only by `run_connection_manager`'s watchdog branch in agent_runtime.rs -
+/// see that module for why an *external* idle check is still worth having
+/// even after handlers were decoupled from the read loop below.
+pub type LastActivity = Arc<Mutex<Instant>>;
+
+fn touch(last_activity: &LastActivity) {
+    if let Ok(mut guard) = last_activity.lock() {
+        *guard = Instant::now();
+    }
+}
+
 pub struct SocketClient {
     server_url: String,
     device_token: String,
@@ -39,10 +54,11 @@ impl SocketClient {
 
     /// Connects to the /agent namespace, retrying indefinitely with a fixed
     /// delay on failure. Returns the connected client, a receiver that
-    /// resolves the moment the server-side "disconnect" event fires, and a
+    /// resolves the moment the server-side "disconnect" event fires, a
     /// shared Notify that any event handler can trigger to force an
     /// immediate reconnect - so the caller knows exactly when to reconnect
-    /// instead of polling.
+    /// instead of polling - and a shared last-activity timestamp for the
+    /// idle watchdog in agent_runtime.rs's `run_connection_manager`.
     ///
     /// The Notify exists because rust_socketio's disconnect callback is
     /// purely read-driven: a failed emit() (e.g. a dead TCP connection)
@@ -60,7 +76,28 @@ impl SocketClient {
     /// afterward. Emitting before that ack completes gets silently dropped
     /// server-side, since the socket isn't considered part of the namespace
     /// yet.
-    pub async fn connect(&self) -> (Client, oneshot::Receiver<()>, Arc<Notify>) {
+    ///
+    /// Every `.on(...)` handler below spawns its actual work with
+    /// `tokio::spawn` instead of awaiting it inline. This matters more than
+    /// it looks: rust_socketio (0.6.0) drives the whole connection - reading
+    /// packets, replying to pings, noticing disconnects - from a single task
+    /// (`Client::poll_stream`) that calls straight into `Client::callback`,
+    /// which `.await`s each registered handler *in place* before it will
+    /// read the next packet (see `asynchronous/client/client.rs` upstream:
+    /// `as_stream` -> `handle_socketio_packet` -> `handle_event` ->
+    /// `callback`, all `.await`ed in a chain with no task boundary). A
+    /// handler that never returns - which, before the `run_with_timeout`
+    /// fixes in processes/mod.rs and screenshot/mod.rs, an unresponsive
+    /// helper pipe could cause - therefore doesn't just fail its own
+    /// request: it wedges that single task forever, which stops the crate
+    /// from ever reading another packet, which means it never sees a
+    /// disconnect and this agent's own reconnect logic (driven by that same
+    /// disconnect signal) never runs either. The OS process stays alive and
+    /// "Running" the whole time, silently doing nothing. Spawning each
+    /// handler means the dispatch task only has to hand off work, not wait
+    /// for it, so no handler - however long it takes or however badly it
+    /// misbehaves - can ever block the read loop again.
+    pub async fn connect(&self) -> (Client, oneshot::Receiver<()>, Arc<Notify>, LastActivity) {
         loop {
             let auth = serde_json::json!({ "token": self.device_token });
             let (disconnect_tx, disconnect_rx) = oneshot::channel::<()>();
@@ -68,6 +105,7 @@ impl SocketClient {
             let (ready_tx, ready_rx) = oneshot::channel::<()>();
             let ready_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(ready_tx)));
             let force_reconnect = Arc::new(Notify::new());
+            let last_activity: LastActivity = Arc::new(Mutex::new(Instant::now()));
 
             let result = ClientBuilder::new(self.server_url.clone())
                 .namespace("/agent")
@@ -91,12 +129,27 @@ impl SocketClient {
                         error!("Agent socket connect_error: {:?}", payload);
                     })
                 })
+                // Fires for every named event this socket receives (see
+                // rust_socketio's Client::callback, which invokes on_any
+                // alongside the specific .on() handler for
+                // Event::Message/Event::Custom). Used only to prove to the
+                // watchdog in agent_runtime.rs that the connection is still
+                // alive and dispatching - deliberately just a Mutex-guarded
+                // Instant swap so it's safe to run inline, unlike the
+                // handlers below.
+                .on_any({
+                    let last_activity = last_activity.clone();
+                    move |_, _, _| {
+                        touch(&last_activity);
+                        Box::pin(async move {})
+                    }
+                })
                 .on("command:execute", {
                     let force_reconnect = force_reconnect.clone();
                     move |payload, client| {
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_command(payload, client, force_reconnect).await;
+                            tokio::spawn(handle_command(payload, client, force_reconnect));
                         })
                     }
                 })
@@ -105,7 +158,7 @@ impl SocketClient {
                     move |payload, client| {
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_process_list_request(payload, client, force_reconnect).await;
+                            tokio::spawn(handle_process_list_request(payload, client, force_reconnect));
                         })
                     }
                 })
@@ -114,7 +167,7 @@ impl SocketClient {
                     move |payload, client| {
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_metrics_request(payload, client, force_reconnect).await;
+                            tokio::spawn(handle_metrics_request(payload, client, force_reconnect));
                         })
                     }
                 })
@@ -125,7 +178,7 @@ impl SocketClient {
                         let browse_root = browse_root.clone();
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_files_list_request(payload, client, browse_root, force_reconnect).await;
+                            tokio::spawn(handle_files_list_request(payload, client, browse_root, force_reconnect));
                         })
                     }
                 })
@@ -136,7 +189,7 @@ impl SocketClient {
                         let browse_root = browse_root.clone();
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_files_download_request(payload, client, browse_root, force_reconnect).await;
+                            tokio::spawn(handle_files_download_request(payload, client, browse_root, force_reconnect));
                         })
                     }
                 })
@@ -145,7 +198,7 @@ impl SocketClient {
                     move |payload, client| {
                         let force_reconnect = force_reconnect.clone();
                         Box::pin(async move {
-                            handle_screenshot_request(payload, client, force_reconnect).await;
+                            tokio::spawn(handle_screenshot_request(payload, client, force_reconnect));
                         })
                     }
                 })
@@ -172,7 +225,7 @@ impl SocketClient {
                     match tokio::time::timeout(Duration::from_secs(10), ready_rx).await {
                         Ok(Ok(())) => {
                             info!("Connected to Sentinel backend at {}", self.server_url);
-                            return (client, disconnect_rx, force_reconnect);
+                            return (client, disconnect_rx, force_reconnect, last_activity);
                         }
                         _ => {
                             error!("Namespace connect ack not received in time. Retrying in {:?}...", RECONNECT_DELAY);
@@ -233,7 +286,17 @@ impl SocketClient {
         match tokio::time::timeout(ACK_TIMEOUT, ack_rx).await {
             Ok(Ok(ack)) => info!("Reported event {} (server ack: {:?})", event.event_type, ack),
             Ok(Err(_)) => error!("Ack channel closed before receiving a response for event {:?}", event.event_type),
-            Err(_) => error!("No ack received from server for event {:?} within {ACK_TIMEOUT:?}", event.event_type),
+            Err(_) => {
+                // The local emit succeeded but no ack ever came back - a
+                // classic symptom of a half-duplex-broken connection (writes
+                // still go out, nothing comes back in) that the crate's own
+                // read-driven disconnect detection can't see on its own.
+                // Treat it the same as a failed emit: force a reconnect
+                // rather than silently logging this and waiting for the
+                // next report to (maybe) notice the same thing.
+                error!("No ack received from server for event {:?} within {ACK_TIMEOUT:?} - forcing reconnect", event.event_type);
+                force_reconnect.notify_one();
+            }
         }
     }
 }
