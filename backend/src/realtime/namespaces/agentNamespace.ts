@@ -230,20 +230,22 @@ export function registerAgentNamespace(io: SocketIOServer): void {
     socket.on("disconnect", () => {
       logger.info(`Agent disconnected: ${device.name} (${device.id})`);
 
-      // A dead agent can't stream; reset live-view state so a later viewer
-      // request starts a fresh session against the reconnected agent.
-      streamService.handleAgentDisconnected();
-
       // A fast reconnect (e.g. the agent's force-reconnect-on-failed-emit
       // path) can already have a newer socket registered as "latest" by
       // the time this fires - if so, this disconnect is stale and must not
-      // clobber isOnline back to false for a device that is, in fact,
-      // still connected via that newer socket.
+      // clobber isOnline back to false, NOR reset the live-view state, for a
+      // device that is, in fact, still connected (and possibly streaming)
+      // via that newer socket. Both side effects below must therefore run
+      // only for the socket that is actually the current one.
       if (latestSocketByDevice.get(device.id) !== socket.id) {
         logger.info(`Ignoring stale disconnect for device ${device.id} (superseded by a newer connection)`);
         return;
       }
       latestSocketByDevice.delete(device.id);
+
+      // The current agent really dropped; reset live-view state so a later
+      // viewer request starts a fresh session against the reconnected agent.
+      streamService.handleAgentDisconnected();
 
       deviceRepository.setOnlineStatus(device.id, false).catch((err: unknown) => {
         logger.error(`Failed to mark device ${device.id} offline`, { error: err instanceof Error ? err.message : err });

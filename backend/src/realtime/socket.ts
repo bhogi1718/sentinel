@@ -7,6 +7,13 @@ import { registerDashboardNamespace } from "./namespaces/dashboardNamespace";
 
 let io: SocketIOServer | undefined;
 
+/// Dashboard sockets that have actually started/joined the live view join
+/// this room; live frames are emitted only to it, so a dashboard tab that
+/// never requested the stream (but is sitting on the Device page) doesn't
+/// receive - and render - frames it didn't ask for. Membership is managed in
+/// dashboardNamespace on stream:start / stream:stop / disconnect.
+export const LIVE_VIEWERS_ROOM = "live-viewers";
+
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
@@ -37,7 +44,7 @@ export function broadcastCommandUpdate(command: unknown): void {
 /// (no base64) - socket.io carries binary natively and the browser renders
 /// it straight into an <img> via a Blob URL.
 export function broadcastStreamFrame(jpeg: Buffer): void {
-  io?.of("/dashboard").emit("stream:frame", jpeg);
+  io?.of("/dashboard").to(LIVE_VIEWERS_ROOM).emit("stream:frame", jpeg);
 }
 
 /// Tells dashboards whether a live view is currently active (so a viewer

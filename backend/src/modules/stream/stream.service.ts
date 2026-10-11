@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { logger } from "../../config/logger";
 import { deviceRepository } from "../device/device.repository";
 import { broadcastStreamFrame, broadcastStreamState, findAgentSocket } from "../../realtime/socket";
+import { AnnotationUpdate } from "./stream.validation";
 
 // Live-view frame parameters sent to the agent on stream:start. Kept here
 // (not hardcoded in the agent) so the viewing side owns the quality/rate
@@ -36,30 +37,43 @@ export const streamService = {
       return;
     }
 
-    const device = await deviceRepository.findFirst();
-    if (!device) {
-      throw new Error("No device has been registered yet");
-    }
-    if (!device.isOnline) {
-      throw new Error("Device is offline - cannot start a live view");
-    }
-
-    const agentSocket = await findAgentSocket(device.id);
-    if (!agentSocket) {
-      throw new Error("Device is not currently connected");
-    }
-
+    // Reserve the session slot synchronously, before the awaits below, so two
+    // near-simultaneous stream:start calls can't both pass the `state === null`
+    // check across an await and start two competing sessions. Any second
+    // caller now sees this reserved state and just joins it. If the async
+    // lookups fail, the reservation is rolled back (only if still ours) so a
+    // failed start doesn't leave the stream wedged "active" forever.
     const sessionId = randomUUID();
     state = { sessionId, viewers: new Set([viewerSocketId]) };
 
-    agentSocket.emit("stream:start", {
-      sessionId,
-      maxWidth: STREAM_MAX_WIDTH,
-      quality: STREAM_QUALITY,
-      intervalMs: STREAM_INTERVAL_MS,
-    });
-    broadcastStreamState(true, sessionId);
-    logger.info(`Live view started (session ${sessionId}) by viewer ${viewerSocketId}`);
+    try {
+      const device = await deviceRepository.findFirst();
+      if (!device) {
+        throw new Error("No device has been registered yet");
+      }
+      if (!device.isOnline) {
+        throw new Error("Device is offline - cannot start a live view");
+      }
+
+      const agentSocket = await findAgentSocket(device.id);
+      if (!agentSocket) {
+        throw new Error("Device is not currently connected");
+      }
+
+      agentSocket.emit("stream:start", {
+        sessionId,
+        maxWidth: STREAM_MAX_WIDTH,
+        quality: STREAM_QUALITY,
+        intervalMs: STREAM_INTERVAL_MS,
+      });
+      broadcastStreamState(true, sessionId);
+      logger.info(`Live view started (session ${sessionId}) by viewer ${viewerSocketId}`);
+    } catch (err) {
+      if (state?.sessionId === sessionId) {
+        state = null;
+      }
+      throw err;
+    }
   },
 
   /// A viewer leaves the live view (explicit stop or disconnect). When the
@@ -99,14 +113,13 @@ export const streamService = {
     broadcastStreamFrame(jpeg);
   },
 
-  /// Forwards annotation shapes to the agent's display-only overlay. The
-  /// payload is passed through as-is (the agent validates it); we only
-  /// confirm there is a connected agent to send to.
-  async forwardAnnotation(payload: unknown): Promise<void> {
+  /// Forwards (already-validated) annotation shapes to the agent's display-only
+  /// overlay. We only confirm there is a connected agent to send to.
+  async forwardAnnotation(update: AnnotationUpdate): Promise<void> {
     const device = await deviceRepository.findFirst();
     if (!device) return;
     const agentSocket = await findAgentSocket(device.id);
-    agentSocket?.emit("annotation:update", payload);
+    agentSocket?.emit("annotation:update", update);
   },
 
   async clearAnnotation(): Promise<void> {

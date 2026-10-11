@@ -6,6 +6,16 @@
 // a named pipe - see windows_apps.rs's doc comment for why this is a
 // separate process at all rather than the main service just doing this
 // itself.
+//
+// Release builds link as the Windows GUI subsystem so the process never
+// gets a console window of its own - it's a background per-session helper
+// launched by a Scheduled Task, and a stray console flashing up (or sitting
+// open) on every logon is just noise. Debug builds keep the console so
+// `cargo run` still shows live logs. With no console in release, stdout
+// logging would go nowhere, so logging is redirected to a rolling file (see
+// init_helper_logging).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod annotation_overlay;
 mod helper_ipc;
 mod stream_indicator;
@@ -29,9 +39,11 @@ const MAX_REQUEST_LINE_BYTES: usize = 64 * 1024;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
-        .init();
+    // Held for the process lifetime: in release this owns the non-blocking
+    // file-writer's worker, which stops flushing the moment it's dropped, so
+    // it must outlive every log call below rather than just the subscriber
+    // setup. In debug it's None (console logging needs no guard).
+    let _log_guard = init_helper_logging();
 
     tracing::info!("Sentinel Agent Helper starting, listening on {}", helper_ipc::PIPE_NAME);
 
@@ -100,6 +112,41 @@ async fn main() {
         // pattern the tokio named_pipe docs recommend for a "listen
         // forever" server.
         drop(server);
+    }
+}
+
+/// Initializes logging. Debug builds have a console (see the crate-level
+/// `windows_subsystem` attribute) so they log to stdout and need no guard.
+/// Release builds have no console, so they log to a rolling daily file next
+/// to the exe - same convention as the service (service.rs), with a distinct
+/// filename prefix so the two processes sharing that folder don't collide.
+/// The returned guard must be held for the process lifetime.
+fn init_helper_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    let filter = tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse().unwrap());
+
+    #[cfg(debug_assertions)]
+    {
+        tracing_subscriber::fmt().with_env_filter(filter).init();
+        None
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        let log_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+        let file_appender = tracing_appender::rolling::daily(log_dir, "sentinel-agent-helper.log");
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+        tracing_subscriber::fmt()
+            .with_writer(non_blocking)
+            .with_ansi(false)
+            .with_env_filter(filter)
+            .init();
+
+        Some(guard)
     }
 }
 

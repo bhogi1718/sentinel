@@ -3,6 +3,8 @@ import { logger } from "../../config/logger";
 import { authService } from "../../modules/auth/auth.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.types";
 import { streamService } from "../../modules/stream/stream.service";
+import { annotationUpdateSchema } from "../../modules/stream/stream.validation";
+import { LIVE_VIEWERS_ROOM } from "../socket";
 
 interface DashboardSocket extends Socket {
   user?: AuthenticatedUser;
@@ -33,6 +35,9 @@ export function registerDashboardNamespace(io: SocketIOServer): void {
     socket.on("stream:start", async (_payload: unknown, ack?: (response: { success: boolean; error?: string }) => void) => {
       try {
         await streamService.startViewing(socket.id);
+        // Only actual viewers get frames (see broadcastStreamFrame) - join
+        // the room now that this socket is a confirmed viewer.
+        await socket.join(LIVE_VIEWERS_ROOM);
         ack?.({ success: true });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to start live view";
@@ -42,25 +47,30 @@ export function registerDashboardNamespace(io: SocketIOServer): void {
     });
 
     socket.on("stream:stop", () => {
+      void socket.leave(LIVE_VIEWERS_ROOM);
       void streamService.stopViewing(socket.id);
     });
 
-    // Shared annotations: forward the viewer's shapes to the agent, which
-    // paints them on its display-only on-screen overlay. Also mirror to any
-    // other dashboard tabs so multiple viewers see the same markup.
+    // Shared annotations: validate the viewer's shapes, then forward them to
+    // the agent, which paints them on its display-only on-screen overlay.
     socket.on("annotation:update", (payload: unknown) => {
-      void streamService.forwardAnnotation(payload);
-      socket.broadcast.emit("annotation:update", payload);
+      const parsed = annotationUpdateSchema.safeParse(payload);
+      if (!parsed.success) {
+        logger.error(`Dashboard ${socket.user?.email} sent a malformed annotation:update`);
+        return;
+      }
+      void streamService.forwardAnnotation(parsed.data);
     });
 
     socket.on("annotation:clear", () => {
       void streamService.clearAnnotation();
-      socket.broadcast.emit("annotation:clear");
     });
 
     socket.on("disconnect", () => {
       logger.info(`Dashboard disconnected: ${socket.user?.email}`);
-      // If this tab was the last viewer, stop the agent stream.
+      // socket.io auto-removes the socket from its rooms on disconnect, so no
+      // explicit leave is needed here. If this tab was the last viewer, stop
+      // the agent stream.
       void streamService.stopViewing(socket.id);
     });
   });

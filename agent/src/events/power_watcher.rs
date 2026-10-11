@@ -30,8 +30,19 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
         },
         // WM_QUERYENDSESSION fires on shutdown/restart/logoff before the
         // system actually goes down - the closest reliable hook available
-        // to a background process for reporting an imminent shutdown.
-        WM_QUERYENDSESSION => Some(PowerEvent::Shutdown),
+        // to a background process for reporting an imminent shutdown. Its
+        // lParam's ENDSESSION_LOGOFF bit distinguishes a user logoff from a
+        // real power-down: reporting a logoff as SHUTDOWN would be wrong, and
+        // there's no LOGOFF event type, so a logoff is skipped rather than
+        // mislabeled. (A real shutdown or restart has this bit clear.)
+        WM_QUERYENDSESSION => {
+            const ENDSESSION_LOGOFF: u32 = 0x8000_0000;
+            if (lparam.0 as u32) & ENDSESSION_LOGOFF != 0 {
+                None
+            } else {
+                Some(PowerEvent::Shutdown)
+            }
+        }
         _ => None,
     };
 

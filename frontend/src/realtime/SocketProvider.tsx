@@ -23,9 +23,14 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const accessToken = getAccessToken();
+    // `auth` as a callback (not a static object) is re-invoked on every
+    // connection attempt, including automatic reconnects. The access token
+    // lives ~15 min and is rotated by the axios layer; capturing it once here
+    // would mean any reconnect after it expired re-handshakes with a stale
+    // token and gets rejected, silently killing the realtime feed until a
+    // page reload. Reading it fresh per attempt keeps reconnects authenticated.
     const dashboardSocket = io(`${SOCKET_BASE_URL}/dashboard`, {
-      auth: { token: accessToken },
+      auth: (cb) => cb({ token: getAccessToken() ?? "" }),
       transports: ["websocket"],
     });
 
