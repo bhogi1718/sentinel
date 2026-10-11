@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { AnnotationOverlay } from "@/features/device/AnnotationOverlay";
 import { useScreenStream } from "@/features/device/useScreenStream";
 
 interface LiveScreenViewerProps {
@@ -9,6 +11,7 @@ interface LiveScreenViewerProps {
 /// JPEG frames the agent streams, with no input sent back to the laptop.
 export function LiveScreenViewer({ isConnected }: LiveScreenViewerProps) {
   const { frameUrl, isStreaming, isStarting, error, start, stop } = useScreenStream();
+  const [annotateUrl, setAnnotateUrl] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-sm">
@@ -63,8 +66,21 @@ export function LiveScreenViewer({ isConnected }: LiveScreenViewerProps) {
             Stop
           </button>
         )}
+        {frameUrl && (
+          <button
+            type="button"
+            onClick={() => setAnnotateUrl(frameUrl)}
+            title="Freeze this frame and annotate it"
+            className="flex items-center gap-xs rounded-xl bg-surface-container-highest px-md py-sm font-mono text-label-mono uppercase tracking-wider text-on-surface transition-colors active:scale-[0.98] hover:bg-surface-container-high"
+          >
+            <Icon name="edit" size={18} />
+            Annotate
+          </button>
+        )}
         <span className="text-body-sm text-on-surface-variant">View-only · no input is sent to the laptop</span>
       </div>
+
+      {annotateUrl && <AnnotationOverlay imageUrl={annotateUrl} onClose={() => setAnnotateUrl(null)} />}
     </div>
   );
 }

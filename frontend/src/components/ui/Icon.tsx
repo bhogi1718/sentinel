@@ -58,7 +58,13 @@ export type IconName =
   | "play_arrow"
   | "stop"
   | "cast"
-  | "hourglass_empty";
+  | "hourglass_empty"
+  | "edit"
+  | "gesture"
+  | "arrow_outward"
+  | "rectangle"
+  | "highlight"
+  | "undo";
 
 interface IconProps {
   name: IconName;
