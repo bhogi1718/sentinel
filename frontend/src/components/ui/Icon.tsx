@@ -64,7 +64,9 @@ export type IconName =
   | "arrow_outward"
   | "rectangle"
   | "highlight"
-  | "undo";
+  | "undo"
+  | "fullscreen"
+  | "fullscreen_exit";
 
 interface IconProps {
   name: IconName;
