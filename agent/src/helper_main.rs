@@ -7,6 +7,7 @@
 // separate process at all rather than the main service just doing this
 // itself.
 mod helper_ipc;
+mod stream_indicator;
 mod processes {
     pub mod screenshot;
     pub mod windows_apps;
@@ -30,6 +31,10 @@ async fn main() {
         .init();
 
     tracing::info!("Sentinel Agent Helper starting, listening on {}", helper_ipc::PIPE_NAME);
+
+    // Owns the on-screen "being viewed" banner shown while a live view is
+    // active. Runs on its own thread with its own window message loop.
+    stream_indicator::spawn();
 
     let security_attributes = match helper_ipc::PipeSecurityAttributes::build() {
         Ok(attrs) => attrs,
@@ -148,6 +153,10 @@ async fn handle_request(
             }
         }
         HelperRequest::StreamFrame { max_width, quality } => {
+            // Keep the "being viewed" banner up: every frame request
+            // refreshes its activity timestamp (see stream_indicator).
+            stream_indicator::notify_active();
+
             // Same blocking-capture-off-the-executor reasoning as the
             // Screenshot arm above, plus a JPEG downscale+encode.
             let capture_result =
