@@ -15,3 +15,8 @@ network_check_interval_secs = 15
 # The service runs as LocalSystem, whose own USERPROFILE points at the
 # SYSTEM profile, not yours, so this can't be auto-detected.
 browse_root = "C:\\Users\\REPLACE_WITH_YOUR_USERNAME"
+
+# Show the on-screen "This screen is being viewed remotely" banner on the
+# laptop while a live view is active. Defaults to true. Set to false to
+# suppress it (this is your own device - your call).
+show_view_indicator = true

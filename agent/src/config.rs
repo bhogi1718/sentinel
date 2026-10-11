@@ -15,6 +15,17 @@ pub struct Config {
     /// under LocalSystem - its own USERPROFILE points at the SYSTEM
     /// profile, not the interactive user's actual home directory.
     pub browse_root: String,
+    /// Whether the per-session helper shows the on-screen "being viewed"
+    /// banner during a live view. Defaults to true (shown). The device
+    /// owner can set this to false to suppress it. Read by the helper
+    /// directly from agent.toml; present here so the schema is complete and
+    /// `toml::from_str` for the service doesn't treat it as unknown.
+    #[serde(default = "default_show_view_indicator")]
+    pub show_view_indicator: bool,
+}
+
+fn default_show_view_indicator() -> bool {
+    true
 }
 
 fn default_battery_low_threshold() -> u8 {

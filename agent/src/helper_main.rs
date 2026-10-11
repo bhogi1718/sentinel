@@ -37,7 +37,13 @@ async fn main() {
 
     // Owns the on-screen "being viewed" banner shown while a live view is
     // active. Runs on its own thread with its own window message loop.
-    stream_indicator::spawn();
+    // Can be turned off by the device owner via `show_view_indicator =
+    // false` in agent.toml (default on).
+    if show_view_indicator() {
+        stream_indicator::spawn();
+    } else {
+        tracing::info!("On-screen 'being viewed' indicator disabled by config");
+    }
 
     // Owns the transparent, click-through shared-annotation overlay.
     annotation_overlay::spawn();
@@ -94,6 +100,34 @@ async fn main() {
         // pattern the tokio named_pipe docs recommend for a "listen
         // forever" server.
         drop(server);
+    }
+}
+
+/// Whether to show the on-screen "being viewed" banner during a live view.
+/// Reads `show_view_indicator` from agent.toml next to the helper exe
+/// (where install-service.ps1 copies it). Defaults to true - the indicator
+/// is shown unless the owner explicitly opts out - and defaults to true on
+/// any read/parse error too, so a missing or malformed config never
+/// silently disables the affordance.
+fn show_view_indicator() -> bool {
+    #[derive(serde::Deserialize)]
+    struct IndicatorConfig {
+        #[serde(default = "yes")]
+        show_view_indicator: bool,
+    }
+    fn yes() -> bool {
+        true
+    }
+
+    let config_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("agent.toml")));
+
+    let Some(path) = config_path else { return true };
+    let Ok(contents) = std::fs::read_to_string(&path) else { return true };
+    match toml::from_str::<IndicatorConfig>(&contents) {
+        Ok(cfg) => cfg.show_view_indicator,
+        Err(_) => true,
     }
 }
 
