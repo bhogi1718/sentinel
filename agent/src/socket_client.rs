@@ -261,6 +261,20 @@ impl SocketClient {
                         })
                     }
                 })
+                .on("annotation:update", {
+                    move |payload, _client| {
+                        Box::pin(async move {
+                            handle_annotation_update(payload);
+                        })
+                    }
+                })
+                .on("annotation:clear", {
+                    move |_payload, _client| {
+                        Box::pin(async move {
+                            tokio::task::spawn_blocking(crate::annotation::clear);
+                        })
+                    }
+                })
                 .on("disconnect", {
                     let disconnect_tx = disconnect_tx.clone();
                     let active_stream = active_stream.clone();
@@ -799,6 +813,30 @@ async fn handle_stream_start(payload: Payload, client: Client, force_reconnect: 
         interval,
         cancel,
     ));
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AnnotationUpdate {
+    shapes: Vec<crate::helper_ipc::WireShape>,
+}
+
+/// Forwards remote-viewer annotation shapes to the per-session helper's
+/// display-only overlay. Parsing + the blocking pipe write run off the
+/// async worker threads.
+fn handle_annotation_update(payload: Payload) {
+    let Payload::Text(values) = payload else {
+        error!("annotation:update payload was not the expected Text variant");
+        return;
+    };
+    let Some(first) = values.first() else { return };
+    let update: AnnotationUpdate = match serde_json::from_value(first.clone()) {
+        Ok(u) => u,
+        Err(e) => {
+            error!("Failed to parse annotation:update payload: {e}");
+            return;
+        }
+    };
+    tokio::task::spawn_blocking(move || crate::annotation::send_shapes(update.shapes));
 }
 
 fn handle_stream_stop(payload: Payload, active_stream: &ActiveStream) {

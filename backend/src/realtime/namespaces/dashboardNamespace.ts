@@ -45,6 +45,19 @@ export function registerDashboardNamespace(io: SocketIOServer): void {
       void streamService.stopViewing(socket.id);
     });
 
+    // Shared annotations: forward the viewer's shapes to the agent, which
+    // paints them on its display-only on-screen overlay. Also mirror to any
+    // other dashboard tabs so multiple viewers see the same markup.
+    socket.on("annotation:update", (payload: unknown) => {
+      void streamService.forwardAnnotation(payload);
+      socket.broadcast.emit("annotation:update", payload);
+    });
+
+    socket.on("annotation:clear", () => {
+      void streamService.clearAnnotation();
+      socket.broadcast.emit("annotation:clear");
+    });
+
     socket.on("disconnect", () => {
       logger.info(`Dashboard disconnected: ${socket.user?.email}`);
       // If this tab was the last viewer, stop the agent stream.

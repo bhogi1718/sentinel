@@ -99,6 +99,23 @@ export const streamService = {
     broadcastStreamFrame(jpeg);
   },
 
+  /// Forwards annotation shapes to the agent's display-only overlay. The
+  /// payload is passed through as-is (the agent validates it); we only
+  /// confirm there is a connected agent to send to.
+  async forwardAnnotation(payload: unknown): Promise<void> {
+    const device = await deviceRepository.findFirst();
+    if (!device) return;
+    const agentSocket = await findAgentSocket(device.id);
+    agentSocket?.emit("annotation:update", payload);
+  },
+
+  async clearAnnotation(): Promise<void> {
+    const device = await deviceRepository.findFirst();
+    if (!device) return;
+    const agentSocket = await findAgentSocket(device.id);
+    agentSocket?.emit("annotation:clear");
+  },
+
   /// Called when the agent socket drops - the stream is dead, reset state so
   /// the next viewer request starts a fresh session.
   handleAgentDisconnected(): void {

@@ -99,6 +99,30 @@ pub enum HelperRequest {
     /// connection so the existing single-shot pipe model - and its
     /// run_with_timeout hang protection - carries over unchanged.
     StreamFrame { max_width: u32, quality: u8 },
+    /// Replace the shapes shown on the shared annotation overlay (the
+    /// transparent, click-through, DISPLAY-ONLY layer - see
+    /// annotation_overlay.rs). Coordinates are normalized 0..1.
+    Annotate { shapes: Vec<WireShape> },
+    /// Clear the shared annotation overlay.
+    AnnotateClear,
+}
+
+/// A point in normalized (0..1) virtual-screen coordinates.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WirePoint {
+    pub x: f32,
+    pub y: f32,
+}
+
+/// One annotation shape, normalized, as it crosses the wire from the
+/// dashboard through the service to the helper's overlay. `width` is a
+/// fraction of screen width so a stroke scales with resolution.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WireShape {
+    pub tool: String,  // "pen" | "arrow" | "rect" | "highlight"
+    pub color: String, // "#rrggbb"
+    pub width: f32,
+    pub points: Vec<WirePoint>,
 }
 
 /// One request/response round trip: the service asks "what does the

@@ -6,6 +6,7 @@
 // a named pipe - see windows_apps.rs's doc comment for why this is a
 // separate process at all rather than the main service just doing this
 // itself.
+mod annotation_overlay;
 mod helper_ipc;
 mod stream_indicator;
 mod processes {
@@ -18,11 +19,13 @@ use tokio::net::windows::named_pipe::ServerOptions;
 
 use helper_ipc::{HelperRequest, ScreenshotHeader, StreamFrameHeader, WindowedPidsResponse};
 
-/// Requests are small, newline-terminated JSON - this bounds how much the
-/// server will buffer from a client before giving up, so a misbehaving or
+/// Requests are newline-terminated JSON - this bounds how much the server
+/// will buffer from a client before giving up, so a misbehaving or
 /// malicious local connection can't make it allocate unbounded memory
-/// waiting for a newline that never arrives.
-const MAX_REQUEST_LINE_BYTES: usize = 256;
+/// waiting for a newline that never arrives. 64 KiB comfortably fits an
+/// Annotate request carrying a page's worth of freehand strokes while still
+/// being a hard cap.
+const MAX_REQUEST_LINE_BYTES: usize = 64 * 1024;
 
 #[tokio::main]
 async fn main() {
@@ -35,6 +38,9 @@ async fn main() {
     // Owns the on-screen "being viewed" banner shown while a live view is
     // active. Runs on its own thread with its own window message loop.
     stream_indicator::spawn();
+
+    // Owns the transparent, click-through shared-annotation overlay.
+    annotation_overlay::spawn();
 
     let security_attributes = match helper_ipc::PipeSecurityAttributes::build() {
         Ok(attrs) => attrs,
@@ -180,6 +186,14 @@ async fn handle_request(
             if !jpeg_bytes.is_empty() {
                 server.write_all(&jpeg_bytes).await.map_err(|e| format!("failed to write JPEG bytes: {e}"))?;
             }
+        }
+        HelperRequest::Annotate { shapes } => {
+            // Display-only: hand the shapes to the overlay window. No
+            // response body - this is fire-and-forget from the service.
+            annotation_overlay::set_shapes(shapes);
+        }
+        HelperRequest::AnnotateClear => {
+            annotation_overlay::clear();
         }
     }
 

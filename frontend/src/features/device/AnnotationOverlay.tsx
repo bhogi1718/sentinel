@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@/components/ui/Icon";
 import type { IconName } from "@/components/ui/Icon";
+import { useScreenAnnotation } from "@/features/device/useScreenAnnotation";
+import type { WireShape } from "@/features/device/useScreenAnnotation";
 
 type Tool = "pen" | "arrow" | "rect" | "highlight";
 
@@ -37,7 +39,9 @@ export function AnnotationOverlay({ imageUrl, onClose }: { imageUrl: string; onC
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState(COLORS[0]);
   const [shapes, setShapes] = useState<Shape[]>([]);
+  const [mirror, setMirror] = useState(false);
   const drawing = useRef<Shape | null>(null);
+  const { broadcast, clear: clearRemote } = useScreenAnnotation();
 
   const strokeWidth = tool === "highlight" ? 18 : 4;
 
@@ -75,6 +79,27 @@ export function AnnotationOverlay({ imageUrl, onClose }: { imageUrl: string; onC
   useEffect(() => {
     redraw();
   }, [shapes, redraw]);
+
+  // When mirroring to the laptop, push the committed shapes (normalized to
+  // 0..1 over the screen) whenever they change.
+  useEffect(() => {
+    if (!mirror) return;
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return;
+    const wire: WireShape[] = shapes.map((s) => ({
+      tool: s.tool,
+      color: s.color,
+      width: s.width / canvas.width,
+      points: s.points.map((p) => ({ x: p.x / canvas.width, y: p.y / canvas.height })),
+    }));
+    broadcast(wire);
+  }, [shapes, mirror, broadcast]);
+
+  // Toggling mirror off clears the laptop overlay; same on unmount.
+  useEffect(() => {
+    if (!mirror) return;
+    return () => clearRemote();
+  }, [mirror, clearRemote]);
 
   function toCanvasPoint(e: React.PointerEvent<HTMLCanvasElement>): Point {
     const canvas = canvasRef.current!;
@@ -115,6 +140,7 @@ export function AnnotationOverlay({ imageUrl, onClose }: { imageUrl: string; onC
 
   function clear(): void {
     setShapes([]);
+    if (mirror) clearRemote();
   }
 
   function download(): void {
@@ -207,6 +233,18 @@ export function AnnotationOverlay({ imageUrl, onClose }: { imageUrl: string; onC
                 Save
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setMirror((m) => !m)}
+              title="Show these annotations on the laptop's own screen"
+              className={`flex items-center gap-xs rounded-md px-base py-1.5 font-mono text-label-mono uppercase tracking-wider transition-colors ${
+                mirror ? "bg-error text-white" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+              }`}
+            >
+              <Icon name={mirror ? "cast" : "cast"} size={16} />
+              {mirror ? "Showing on laptop" : "Show on laptop"}
+            </button>
           </div>
 
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-black/40">
