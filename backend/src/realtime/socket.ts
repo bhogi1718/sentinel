@@ -14,8 +14,20 @@ let io: SocketIOServer | undefined;
 /// dashboardNamespace on stream:start / stream:stop / disconnect.
 export const LIVE_VIEWERS_ROOM = "live-viewers";
 
+// A single on-demand screenshot is a full-resolution PNG of the entire
+// virtual screen (every monitor), which routinely exceeds Socket.IO's default
+// 1 MB per-message cap - when it does, the server rejects the agent's
+// screenshot:response as an oversized frame ("EngineIO Error" on the agent
+// side) AND drops the connection, so the capture never arrives and the agent
+// briefly reconnects. Raise the cap to comfortably fit even a multi-monitor
+// 4K PNG. Safe here: this is a single-owner, authenticated tool, screenshots
+// are rate-limited, and file downloads are chunked (64 KB) so nothing else
+// relies on large single messages.
+const MAX_MESSAGE_BYTES = 50 * 1024 * 1024; // 50 MB
+
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
+    maxHttpBufferSize: MAX_MESSAGE_BYTES,
     cors: {
       origin: corsOrigins,
       credentials: true,
