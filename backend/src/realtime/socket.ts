@@ -33,6 +33,19 @@ export function broadcastCommandUpdate(command: unknown): void {
   io?.of("/dashboard").emit("command:update", command);
 }
 
+/// Sends one live-view JPEG frame to every connected dashboard. Raw bytes
+/// (no base64) - socket.io carries binary natively and the browser renders
+/// it straight into an <img> via a Blob URL.
+export function broadcastStreamFrame(jpeg: Buffer): void {
+  io?.of("/dashboard").emit("stream:frame", jpeg);
+}
+
+/// Tells dashboards whether a live view is currently active (so a viewer
+/// opening a second tab, or one that just connected, reflects reality).
+export function broadcastStreamState(active: boolean, sessionId: string | null): void {
+  io?.of("/dashboard").emit("stream:state", { active, sessionId });
+}
+
 /// Finds the agent namespace's currently connected socket for a device (at
 /// most one is ever expected) so the command service can emit directly to
 /// it with an ack, mirroring how the agent itself emits event:report.

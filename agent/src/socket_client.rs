@@ -16,6 +16,44 @@ use crate::screenshot::{self, ScreenshotRequest};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
+/// Live-view defaults, used when the server omits a field in stream:start.
+/// Conservative on purpose: a modest frame rate and width keep the per-
+/// frame byte cost low enough to stay smooth over the Socket.IO transport
+/// on a small host, and are plenty for "watch what's happening on the
+/// laptop" rather than gaming-grade video.
+const DEFAULT_STREAM_MAX_WIDTH: u32 = 1280;
+const DEFAULT_STREAM_QUALITY: u8 = 55;
+const DEFAULT_STREAM_INTERVAL_MS: u64 = 500;
+
+/// Parsed stream:start request. The session id (a UUID string) is prefixed
+/// onto every frame's binary payload the same 36-byte way screenshot and
+/// download chunks are, so the server can correlate frames to the session
+/// and drop any that arrive after a stop.
+#[derive(Debug, serde::Deserialize)]
+struct StreamStartRequest {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    #[serde(rename = "maxWidth")]
+    max_width: Option<u32>,
+    quality: Option<u8>,
+    #[serde(rename = "intervalMs")]
+    interval_ms: Option<u64>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StreamStopRequest {
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
+}
+
+/// Cancellation handle for the one active live-view session, if any. The
+/// stream:start handler stores a fresh Notify here and spawns the capture
+/// loop; stream:stop (or a disconnect) takes it back out and notifies it,
+/// which makes the loop exit on its next tick. A plain Mutex<Option<..>> is
+/// enough because single-owner Sentinel has at most one laptop and real-
+/// istically one viewer - a second stream:start just supersedes the first.
+type ActiveStream = Arc<Mutex<Option<Arc<Notify>>>>;
+
 /// A connected client plus the handle used to force a reconnect if this
 /// client turns out to be unable to actually send (see connect()'s doc
 /// comment). Published together via the watch channel in agent_runtime.rs
@@ -106,6 +144,7 @@ impl SocketClient {
             let ready_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(ready_tx)));
             let force_reconnect = Arc::new(Notify::new());
             let last_activity: LastActivity = Arc::new(Mutex::new(Instant::now()));
+            let active_stream: ActiveStream = Arc::new(Mutex::new(None));
 
             let result = ClientBuilder::new(self.server_url.clone())
                 .namespace("/agent")
@@ -202,12 +241,37 @@ impl SocketClient {
                         })
                     }
                 })
+                .on("stream:start", {
+                    let force_reconnect = force_reconnect.clone();
+                    let active_stream = active_stream.clone();
+                    move |payload, client| {
+                        let force_reconnect = force_reconnect.clone();
+                        let active_stream = active_stream.clone();
+                        Box::pin(async move {
+                            tokio::spawn(handle_stream_start(payload, client, force_reconnect, active_stream));
+                        })
+                    }
+                })
+                .on("stream:stop", {
+                    let active_stream = active_stream.clone();
+                    move |payload, _client| {
+                        let active_stream = active_stream.clone();
+                        Box::pin(async move {
+                            handle_stream_stop(payload, &active_stream);
+                        })
+                    }
+                })
                 .on("disconnect", {
                     let disconnect_tx = disconnect_tx.clone();
+                    let active_stream = active_stream.clone();
                     move |_, _| {
                         let disconnect_tx = disconnect_tx.clone();
+                        let active_stream = active_stream.clone();
                         Box::pin(async move {
                             warn!("Agent socket disconnected");
+                            // Stop any in-flight live view: its frames would
+                            // only fail to emit on this dead socket anyway.
+                            cancel_active_stream(&active_stream);
                             if let Some(tx) = disconnect_tx.lock().unwrap().take() {
                                 let _ = tx.send(());
                             }
@@ -673,4 +737,137 @@ async fn handle_screenshot_request(payload: Payload, client: Client, force_recon
             }
         }
     }
+}
+
+/// Cancels the active live-view session (if any) by notifying its loop to
+/// exit. Safe to call when nothing is streaming.
+fn cancel_active_stream(active_stream: &ActiveStream) {
+    if let Ok(mut guard) = active_stream.lock() {
+        if let Some(cancel) = guard.take() {
+            cancel.notify_one();
+        }
+    }
+}
+
+/// Starts a live-view session: begins emitting downscaled JPEG frames on an
+/// interval until stream:stop (or a disconnect) cancels it. A second
+/// stream:start supersedes any current session rather than running two in
+/// parallel.
+async fn handle_stream_start(payload: Payload, client: Client, force_reconnect: Arc<Notify>, active_stream: ActiveStream) {
+    let Payload::Text(values) = payload else {
+        error!("stream:start payload was not the expected Text variant");
+        return;
+    };
+    let Some(first) = values.first() else {
+        error!("stream:start payload was empty");
+        return;
+    };
+    let request: StreamStartRequest = match serde_json::from_value(first.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to parse stream:start payload: {e}");
+            return;
+        }
+    };
+
+    let max_width = request.max_width.unwrap_or(DEFAULT_STREAM_MAX_WIDTH);
+    let quality = request.quality.unwrap_or(DEFAULT_STREAM_QUALITY).clamp(1, 100);
+    let interval = Duration::from_millis(request.interval_ms.unwrap_or(DEFAULT_STREAM_INTERVAL_MS).max(100));
+    let session_id = request.session_id;
+
+    info!("Starting live view stream (session {session_id}, {max_width}px q{quality} every {interval:?})");
+
+    // Supersede any existing session, then register this one's canceller.
+    let cancel = Arc::new(Notify::new());
+    {
+        let mut guard = match active_stream.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if let Some(previous) = guard.replace(cancel.clone()) {
+            previous.notify_one();
+        }
+    }
+
+    tokio::spawn(stream_loop(
+        client,
+        force_reconnect,
+        active_stream,
+        session_id,
+        max_width,
+        quality,
+        interval,
+        cancel,
+    ));
+}
+
+fn handle_stream_stop(payload: Payload, active_stream: &ActiveStream) {
+    // A stop with no/empty session id just cancels whatever is active.
+    if let Payload::Text(values) = &payload {
+        if let Some(first) = values.first() {
+            if let Ok(req) = serde_json::from_value::<StreamStopRequest>(first.clone()) {
+                info!("Stopping live view stream (session {:?})", req.session_id);
+            }
+        }
+    }
+    cancel_active_stream(active_stream);
+}
+
+/// The per-session frame loop. Captures a frame, emits it, waits the
+/// interval (or exits early on cancellation), repeat. Each frame is a
+/// binary emit prefixed with the 36-byte session id so the server can
+/// correlate and drop stale frames. A failed emit forces a reconnect and
+/// ends the loop (the socket is likely dead); a failed *capture* is logged
+/// and skipped rather than ending the stream, since it may be transient
+/// (e.g. the helper's session briefly locked).
+#[allow(clippy::too_many_arguments)]
+async fn stream_loop(
+    client: Client,
+    force_reconnect: Arc<Notify>,
+    active_stream: ActiveStream,
+    session_id: String,
+    max_width: u32,
+    quality: u8,
+    interval: Duration,
+    cancel: Arc<Notify>,
+) {
+    loop {
+        // Capture off the async worker threads (blocking pipe + GDI), same
+        // as the one-shot screenshot path.
+        let frame = tokio::task::spawn_blocking(move || screenshot::capture_stream_frame(max_width, quality))
+            .await
+            .unwrap_or_else(|e| Err(format!("stream frame task panicked: {e}")));
+
+        match frame {
+            Ok(jpeg_bytes) => {
+                let mut framed = Vec::with_capacity(36 + jpeg_bytes.len());
+                framed.extend_from_slice(session_id.as_bytes());
+                framed.extend_from_slice(&jpeg_bytes);
+                if let Err(e) = client.emit("stream:frame", framed).await {
+                    error!("Failed to send stream:frame: {e}");
+                    force_reconnect.notify_one();
+                    break;
+                }
+            }
+            Err(message) => {
+                warn!("Stream frame capture failed (skipping this tick): {message}");
+            }
+        }
+
+        // Wait the interval, but wake immediately on cancellation.
+        tokio::select! {
+            _ = cancel.notified() => break,
+            _ = tokio::time::sleep(interval) => {}
+        }
+    }
+
+    // Clear ourselves from the slot only if we're still the registered
+    // session - a superseding stream:start may have replaced us already.
+    if let Ok(mut guard) = active_stream.lock() {
+        if guard.as_ref().map(|c| Arc::ptr_eq(c, &cancel)).unwrap_or(false) {
+            *guard = None;
+        }
+    }
+
+    info!("Live view stream loop ended (session {session_id})");
 }

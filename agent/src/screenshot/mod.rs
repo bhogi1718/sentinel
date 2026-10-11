@@ -2,13 +2,19 @@ use serde::Deserialize;
 use std::io::Read;
 use std::time::Duration;
 
-use crate::helper_ipc::{run_with_timeout, write_request, HelperRequest, ScreenshotHeader, PIPE_NAME};
+use crate::helper_ipc::{run_with_timeout, write_request, HelperRequest, ScreenshotHeader, StreamFrameHeader, PIPE_NAME};
 
 #[derive(Debug, Deserialize)]
 pub struct ScreenshotRequest {
     #[serde(rename = "requestId")]
     pub request_id: String,
 }
+
+/// A single live-stream frame is bounded tighter than a one-shot
+/// screenshot: if the helper can't produce a frame within a couple of
+/// seconds the stream loop should just skip it and try the next tick rather
+/// than stalling the cadence - a stale frame is worse than a dropped one.
+const STREAM_FRAME_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// How long to wait for the per-session helper to respond before giving up.
 /// Capture itself is fast (a single BitBlt + PNG encode), but the helper
@@ -82,4 +88,58 @@ fn read_screenshot_response(pipe: &mut std::fs::File) -> Result<Vec<u8>, String>
     pipe.read_exact(&mut png_bytes).map_err(|e| format!("Failed to read PNG bytes: {e}"))?;
 
     Ok(png_bytes)
+}
+
+/// Requests a single downscaled-JPEG stream frame from the per-session
+/// helper. Same helper-pipe mechanics and hang protection as
+/// capture_screenshot, just a different request/response framing (JPEG, and
+/// a tighter timeout - see STREAM_FRAME_TIMEOUT). The stream loop in
+/// socket_client.rs calls this on each tick.
+pub fn capture_stream_frame(max_width: u32, quality: u8) -> Result<Vec<u8>, String> {
+    match run_with_timeout(STREAM_FRAME_TIMEOUT, move || connect_and_capture_stream_frame(max_width, quality)) {
+        Some(result) => result,
+        None => Err(format!(
+            "Timed out after {STREAM_FRAME_TIMEOUT:?} waiting for a stream frame from the helper pipe"
+        )),
+    }
+}
+
+fn connect_and_capture_stream_frame(max_width: u32, quality: u8) -> Result<Vec<u8>, String> {
+    let start = std::time::Instant::now();
+
+    loop {
+        match std::fs::OpenOptions::new().read(true).write(true).open(PIPE_NAME) {
+            Ok(mut pipe) => {
+                write_request(&mut pipe, &HelperRequest::StreamFrame { max_width, quality })
+                    .map_err(|e| format!("Failed to send stream frame request to helper pipe: {e}"))?;
+                return read_stream_frame_response(&mut pipe);
+            }
+            Err(e) => {
+                if e.raw_os_error() == Some(231) && start.elapsed() < STREAM_FRAME_TIMEOUT {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                return Err(format!("Could not connect to helper pipe for stream frame: {e}"));
+            }
+        }
+    }
+}
+
+fn read_stream_frame_response(pipe: &mut std::fs::File) -> Result<Vec<u8>, String> {
+    let mut len_bytes = [0u8; 4];
+    pipe.read_exact(&mut len_bytes).map_err(|e| format!("Failed to read header length: {e}"))?;
+    let header_len = u32::from_le_bytes(len_bytes) as usize;
+
+    let mut header_bytes = vec![0u8; header_len];
+    pipe.read_exact(&mut header_bytes).map_err(|e| format!("Failed to read header: {e}"))?;
+    let header: StreamFrameHeader = serde_json::from_slice(&header_bytes).map_err(|e| format!("Malformed header: {e}"))?;
+
+    if let Some(error) = header.error {
+        return Err(format!("Helper reported a capture failure: {error}"));
+    }
+
+    let mut jpeg_bytes = vec![0u8; header.jpeg_byte_len as usize];
+    pipe.read_exact(&mut jpeg_bytes).map_err(|e| format!("Failed to read JPEG bytes: {e}"))?;
+
+    Ok(jpeg_bytes)
 }

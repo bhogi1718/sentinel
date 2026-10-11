@@ -54,7 +54,11 @@ export type IconName =
   | "folder_zip"
   | "drive_file_rename_outline"
   | "move_up"
-  | "share";
+  | "share"
+  | "play_arrow"
+  | "stop"
+  | "cast"
+  | "hourglass_empty";
 
 interface IconProps {
   name: IconName;

@@ -91,6 +91,14 @@ impl Drop for PipeSecurityAttributes {
 pub enum HelperRequest {
     WindowedPids,
     Screenshot,
+    /// One live-stream frame: capture the virtual screen, downscale to at
+    /// most `max_width` px wide and JPEG-encode at `quality` (1-100). The
+    /// service asks for these on a repeating interval while a view session
+    /// is active (see socket_client.rs's stream loop). Kept as individual
+    /// request/response round trips rather than a persistent streaming
+    /// connection so the existing single-shot pipe model - and its
+    /// run_with_timeout hang protection - carries over unchanged.
+    StreamFrame { max_width: u32, quality: u8 },
 }
 
 /// One request/response round trip: the service asks "what does the
@@ -116,6 +124,16 @@ pub struct ScreenshotHeader {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub png_byte_len: u32,
+}
+
+/// Same `[4-byte LE header length][JSON header][raw JPEG bytes]` framing as
+/// ScreenshotHeader, for live stream frames. Separate type because a frame
+/// carries JPEG (not PNG) bytes and the field name should say so.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StreamFrameHeader {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub jpeg_byte_len: u32,
 }
 
 /// Writes a request as newline-terminated JSON - the wire format

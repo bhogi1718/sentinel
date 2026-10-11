@@ -15,6 +15,7 @@ import { processService } from "../../modules/process/process.service";
 import { processListResponseSchema } from "../../modules/process/process.validation";
 import { screenshotService } from "../../modules/screenshot/screenshot.service";
 import { screenshotErrorSchema } from "../../modules/screenshot/screenshot.validation";
+import { streamService } from "../../modules/stream/stream.service";
 import { broadcastDeviceStatus } from "../socket";
 
 export interface AgentSocketData {
@@ -216,8 +217,22 @@ export function registerAgentNamespace(io: SocketIOServer): void {
       screenshotService.rejectResponse(parsed.data.requestId, parsed.data.error);
     });
 
+    // Live-view frames: a binary payload prefixed with the 36-byte session
+    // id (see stream.service.ts). Relayed straight to dashboard viewers.
+    socket.on("stream:frame", (framed: unknown) => {
+      if (!Buffer.isBuffer(framed)) {
+        logger.error(`Received non-buffer stream:frame from device ${device.id}`);
+        return;
+      }
+      streamService.handleAgentFrame(framed);
+    });
+
     socket.on("disconnect", () => {
       logger.info(`Agent disconnected: ${device.name} (${device.id})`);
+
+      // A dead agent can't stream; reset live-view state so a later viewer
+      // request starts a fresh session against the reconnected agent.
+      streamService.handleAgentDisconnected();
 
       // A fast reconnect (e.g. the agent's force-reconnect-on-failed-emit
       // path) can already have a newer socket registered as "latest" by

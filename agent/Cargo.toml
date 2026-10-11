@@ -24,6 +24,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 sysinfo = "0.32"
 png = "0.17"
+# JPEG encoding + downscaling for the live screen stream. Full-resolution
+# PNG frames are multiple MB each; downscaled JPEG frames are tens of KB,
+# which is what makes a live feed viable over Socket.IO on a small host.
+# default-features off keeps this to just the codecs we actually use.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

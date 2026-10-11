@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { ScreenshotViewer } from "@/components/ui/ScreenshotViewer";
+import { LiveScreenViewer } from "@/features/device/LiveScreenViewer";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
 import type { WholeMachineCommandType } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
@@ -147,6 +148,9 @@ export function DevicePage() {
           ))}
         </div>
       </div>
+
+      {/* Live screen view (view-only) */}
+      <LiveScreenViewer isConnected={isConnected} />
 
       {/* Remote actions */}
       <div className="flex flex-col gap-sm">

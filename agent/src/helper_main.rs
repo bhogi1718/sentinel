@@ -15,7 +15,7 @@ mod processes {
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::ServerOptions;
 
-use helper_ipc::{HelperRequest, ScreenshotHeader, WindowedPidsResponse};
+use helper_ipc::{HelperRequest, ScreenshotHeader, StreamFrameHeader, WindowedPidsResponse};
 
 /// Requests are small, newline-terminated JSON - this bounds how much the
 /// server will buffer from a client before giving up, so a misbehaving or
@@ -145,6 +145,31 @@ async fn handle_request(
             server.write_all(&header_bytes).await.map_err(|e| format!("failed to write header: {e}"))?;
             if !png_bytes.is_empty() {
                 server.write_all(&png_bytes).await.map_err(|e| format!("failed to write PNG bytes: {e}"))?;
+            }
+        }
+        HelperRequest::StreamFrame { max_width, quality } => {
+            // Same blocking-capture-off-the-executor reasoning as the
+            // Screenshot arm above, plus a JPEG downscale+encode.
+            let capture_result =
+                tokio::task::spawn_blocking(move || processes::screenshot::capture_virtual_screen_jpeg(max_width, quality))
+                    .await
+                    .map_err(|e| format!("stream frame capture task panicked: {e}"))?;
+
+            let (jpeg_bytes, error) = match capture_result {
+                Ok(bytes) => (bytes, None),
+                Err(e) => (Vec::new(), Some(e)),
+            };
+
+            let header = StreamFrameHeader { error, jpeg_byte_len: jpeg_bytes.len() as u32 };
+            let header_bytes = serde_json::to_vec(&header).map_err(|e| format!("failed to serialize header: {e}"))?;
+
+            server
+                .write_all(&(header_bytes.len() as u32).to_le_bytes())
+                .await
+                .map_err(|e| format!("failed to write header length: {e}"))?;
+            server.write_all(&header_bytes).await.map_err(|e| format!("failed to write header: {e}"))?;
+            if !jpeg_bytes.is_empty() {
+                server.write_all(&jpeg_bytes).await.map_err(|e| format!("failed to write JPEG bytes: {e}"))?;
             }
         }
     }

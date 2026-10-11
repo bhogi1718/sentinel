@@ -6,13 +6,16 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN};
 
-/// Captures the full virtual screen (all monitors, spanning their actual
-/// arrangement) as PNG bytes. Must run in the interactive user's session -
-/// GetDC(None) returns a DC for the calling process's own desktop, which a
-/// Session-0 LocalSystem service doesn't have (see windows_apps.rs for the
-/// same constraint applied to window enumeration). This is why capture
-/// lives in the per-session helper rather than the main service.
-pub fn capture_virtual_screen_png() -> Result<Vec<u8>, String> {
+/// Captures the full virtual screen as raw RGBA pixels plus its dimensions.
+/// Shared by both the PNG path (one-shot screenshots) and the JPEG path
+/// (live stream frames) so the GDI capture sequence - and its hard
+/// constraint of running inside the interactive session - lives in exactly
+/// one place. Must run in the interactive user's session: GetDC(None)
+/// returns a DC for the calling process's own desktop, which a Session-0
+/// LocalSystem service doesn't have (see windows_apps.rs for the same
+/// constraint applied to window enumeration). This is why capture lives in
+/// the per-session helper rather than the main service.
+fn capture_virtual_screen_rgba() -> Result<(u32, u32, Vec<u8>), String> {
     // Without this, GDI calls made from a process that hasn't opted into
     // per-monitor DPI awareness capture at a DPI-virtualized (scaled, often
     // blurry) resolution rather than the monitors' real pixel dimensions.
@@ -33,8 +36,54 @@ pub fn capture_virtual_screen_png() -> Result<Vec<u8>, String> {
         return Err(format!("Invalid virtual screen dimensions: {width}x{height}"));
     }
 
-    let rgb = unsafe { capture_region_rgb(x, y, width, height) }?;
-    encode_png(width as u32, height as u32, &rgb)
+    let rgba = unsafe { capture_region_rgb(x, y, width, height) }?;
+    Ok((width as u32, height as u32, rgba))
+}
+
+/// Captures the full virtual screen (all monitors, spanning their actual
+/// arrangement) as PNG bytes.
+pub fn capture_virtual_screen_png() -> Result<Vec<u8>, String> {
+    let (width, height, rgba) = capture_virtual_screen_rgba()?;
+    encode_png(width, height, &rgba)
+}
+
+/// Captures the full virtual screen and encodes it as a downscaled JPEG for
+/// live streaming. `max_width` caps the output width (aspect ratio
+/// preserved; never upscales); `quality` is the JPEG quality 1-100. A full
+/// 4K desktop as PNG is several MB - the same frame downscaled to ~1280px
+/// wide at quality ~60 is tens of KB, which is what makes a multi-frame-per-
+/// second feed viable over the Socket.IO transport and a small host.
+pub fn capture_virtual_screen_jpeg(max_width: u32, quality: u8) -> Result<Vec<u8>, String> {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::{imageops::FilterType, RgbaImage};
+
+    let (width, height, rgba) = capture_virtual_screen_rgba()?;
+
+    let image = RgbaImage::from_raw(width, height, rgba)
+        .ok_or_else(|| "Captured pixel buffer did not match its dimensions".to_string())?;
+
+    // Downscale only when the capture is wider than the cap - never upscale
+    // (that would just inflate bytes for no added detail). Triangle filter
+    // is a good quality/speed tradeoff for the per-frame budget of a live
+    // stream, unlike the slower Lanczos3.
+    let scaled = if width > max_width && max_width > 0 {
+        let scaled_height = ((height as u64 * max_width as u64) / width as u64).max(1) as u32;
+        image::imageops::resize(&image, max_width, scaled_height, FilterType::Triangle)
+    } else {
+        image
+    };
+
+    // JPEG has no alpha channel; drop it. DynamicImage::to_rgb8 handles the
+    // RGBA->RGB conversion.
+    let rgb = image::DynamicImage::ImageRgba8(scaled).to_rgb8();
+
+    let mut jpeg_bytes = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, quality);
+    encoder
+        .encode(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("JPEG encode failed: {e}"))?;
+
+    Ok(jpeg_bytes)
 }
 
 /// SAFETY: caller must ensure this runs on a thread with access to an
