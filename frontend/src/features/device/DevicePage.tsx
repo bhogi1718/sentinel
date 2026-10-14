@@ -5,15 +5,42 @@ import { Icon } from "@/components/ui/Icon";
 import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { ScreenshotViewer } from "@/components/ui/ScreenshotViewer";
+import type { IconName } from "@/components/ui/Icon";
 import { LiveScreenViewer } from "@/features/device/LiveScreenViewer";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
-import type { WholeMachineCommandType } from "@/features/device/remoteCommands";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import { useScreenshot } from "@/features/device/useScreenshot";
 
-const DEVICE_PAGE_COMMANDS: WholeMachineCommandType[] = ["RESTART", "LOCK", "SHUTDOWN"];
+function ActionButton({
+  icon,
+  label,
+  danger = false,
+  disabled = false,
+  busy = false,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={disabled ? "Device is offline" : label}
+      className="flex items-center justify-center gap-sm rounded-xl bg-surface-container-highest px-md py-md transition-colors active:scale-[0.98] disabled:opacity-50 hover:bg-surface-container-high"
+    >
+      <Icon name={icon} size={20} className={`${busy ? "animate-pulse " : ""}${danger ? "text-error" : "text-on-surface-variant"}`} />
+      <span className={`font-mono text-label-mono uppercase ${danger ? "text-error" : "text-on-surface"}`}>{label}</span>
+    </button>
+  );
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -78,6 +105,9 @@ export function DevicePage() {
           </div>
         </div>
       </div>
+
+      {/* Live screen view (view-only) - the most-used feature, kept at top */}
+      <LiveScreenViewer isConnected={isConnected} />
 
       {/* Performance gauges */}
       <div className="grid grid-cols-1 gap-gutter md:grid-cols-2">
@@ -149,49 +179,22 @@ export function DevicePage() {
         </div>
       </div>
 
-      {/* Live screen view (view-only) */}
-      <LiveScreenViewer isConnected={isConnected} />
+      {/* Remote actions, grouped */}
+      <div className="flex flex-col gap-md">
+        <div className="flex flex-col gap-sm">
+          <span className="px-xs font-mono text-label-mono uppercase tracking-widest text-on-surface-variant">Quick</span>
+          <div className="grid grid-cols-2 gap-sm">
+            <ActionButton icon="screenshot" label="Screenshot" disabled={!isConnected || isCapturing} busy={isCapturing} onClick={handleCapture} />
+            <ActionButton icon={REMOTE_COMMANDS.LOCK.icon} label="Lock" disabled={!isConnected} onClick={() => requestCommand("LOCK")} />
+          </div>
+        </div>
 
-      {/* Remote actions */}
-      <div className="flex flex-col gap-sm">
-        <span className="px-xs font-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
-          Remote Actions
-        </span>
-        <div className="grid grid-cols-4 gap-sm">
-          <button
-            type="button"
-            disabled={!isConnected || isCapturing}
-            onClick={handleCapture}
-            title={isConnected ? "Capture a screenshot" : "Device is offline"}
-            className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm transition-colors active:scale-[0.97] disabled:opacity-50 hover:bg-surface-container-high"
-          >
-            <Icon
-              name="screenshot"
-              size={20}
-              className={isCapturing ? "animate-pulse text-on-surface-variant" : "text-on-surface-variant"}
-            />
-            <span className="font-mono text-[10px] uppercase text-on-surface">Capture</span>
-          </button>
-
-          {DEVICE_PAGE_COMMANDS.map((type) => {
-            const command = REMOTE_COMMANDS[type];
-            const label = type === "RESTART" ? "Reboot" : command.label;
-            return (
-              <button
-                key={type}
-                type="button"
-                disabled={!isConnected}
-                onClick={() => requestCommand(type)}
-                title={isConnected ? command.label : "Device is offline"}
-                className="flex flex-col items-center justify-center gap-xs rounded-xl bg-surface-container-highest p-sm transition-colors active:scale-[0.97] disabled:opacity-50 hover:bg-surface-container-high"
-              >
-                <Icon name={command.icon} size={20} className={command.danger ? "text-error" : "text-on-surface-variant"} />
-                <span className={`font-mono text-[10px] uppercase ${command.danger ? "text-error" : "text-on-surface"}`}>
-                  {label}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex flex-col gap-sm">
+          <span className="px-xs font-mono text-label-mono uppercase tracking-widest text-on-surface-variant">Power</span>
+          <div className="grid grid-cols-2 gap-sm">
+            <ActionButton icon={REMOTE_COMMANDS.RESTART.icon} label="Reboot" danger disabled={!isConnected} onClick={() => requestCommand("RESTART")} />
+            <ActionButton icon={REMOTE_COMMANDS.SHUTDOWN.icon} label="Shutdown" danger disabled={!isConnected} onClick={() => requestCommand("SHUTDOWN")} />
+          </div>
         </div>
       </div>
 

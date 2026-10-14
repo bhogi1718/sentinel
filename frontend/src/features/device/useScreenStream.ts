@@ -18,7 +18,11 @@ export function useScreenStream() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fps, setFps] = useState(0);
+  const [secondsSinceFrame, setSecondsSinceFrame] = useState(0);
   const currentUrl = useRef<string | null>(null);
+  const frameTimes = useRef<number[]>([]);
+  const lastFrameAt = useRef<number>(0);
 
   const revokeCurrent = useCallback(() => {
     if (currentUrl.current) {
@@ -62,6 +66,18 @@ export function useScreenStream() {
       revokeCurrent();
       currentUrl.current = url;
       setFrameUrl(url);
+
+      // Frame-rate estimate from the spacing of the last several frames.
+      const now = performance.now();
+      lastFrameAt.current = now;
+      setSecondsSinceFrame(0);
+      const times = frameTimes.current;
+      times.push(now);
+      if (times.length > 10) times.shift();
+      if (times.length >= 2) {
+        const span = (times[times.length - 1] - times[0]) / 1000;
+        if (span > 0) setFps((times.length - 1) / span);
+      }
     };
 
     const onState = (payload: { active: boolean }) => {
@@ -80,6 +96,18 @@ export function useScreenStream() {
     };
   }, [socket, revokeCurrent]);
 
+  // Tick the "seconds since last frame" readout while streaming, so a
+  // stalled feed is visible rather than looking frozen-but-live.
+  useEffect(() => {
+    if (!isStreaming) return;
+    const id = setInterval(() => {
+      if (lastFrameAt.current > 0) {
+        setSecondsSinceFrame((performance.now() - lastFrameAt.current) / 1000);
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [isStreaming]);
+
   // Leaving the page (or losing the socket) stops the agent stream and
   // frees the last frame's memory.
   useEffect(() => {
@@ -89,5 +117,13 @@ export function useScreenStream() {
     };
   }, [socket, revokeCurrent]);
 
-  return { frameUrl, isStreaming, isStarting, error, start, stop };
+  // Reset stats when a stream ends.
+  useEffect(() => {
+    if (!isStreaming) {
+      setFps(0);
+      frameTimes.current = [];
+    }
+  }, [isStreaming]);
+
+  return { frameUrl, isStreaming, isStarting, error, fps, secondsSinceFrame, start, stop };
 }
