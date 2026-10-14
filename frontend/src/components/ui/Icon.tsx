@@ -66,7 +66,12 @@ export type IconName =
   | "highlight"
   | "undo"
   | "fullscreen"
-  | "fullscreen_exit";
+  | "fullscreen_exit"
+  | "light_mode"
+  | "dark_mode"
+  | "brightness_auto"
+  | "person"
+  | "menu";
 
 interface IconProps {
   name: IconName;

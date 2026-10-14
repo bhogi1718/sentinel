@@ -1,6 +1,22 @@
 import { NavLink } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { navItems } from "./navItems";
+import { moreNavItems, primaryNavItems, type NavItem } from "./navItems";
+
+function NavRow({ to, label, icon }: NavItem) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center gap-sm rounded-lg px-sm py-2.5 text-body-sm font-medium transition-colors ${
+          isActive ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-white/5 hover:text-on-surface"
+        }`
+      }
+    >
+      <Icon name={icon} size={18} />
+      {label}
+    </NavLink>
+  );
+}
 
 export function Sidebar() {
   return (
@@ -13,19 +29,15 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-xs">
-        {navItems.map(({ to, label, icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-sm rounded-lg px-sm py-2.5 text-body-sm font-medium transition-colors ${
-                isActive ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-white/5 hover:text-on-surface"
-              }`
-            }
-          >
-            <Icon name={icon} size={18} />
-            {label}
-          </NavLink>
+        {primaryNavItems.map((item) => (
+          <NavRow key={item.to} {...item} />
+        ))}
+
+        <span className="mt-md mb-xs px-sm font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+          More
+        </span>
+        {moreNavItems.map((item) => (
+          <NavRow key={item.to} {...item} />
         ))}
       </nav>
     </aside>

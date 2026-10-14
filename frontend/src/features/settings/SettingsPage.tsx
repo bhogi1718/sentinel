@@ -3,14 +3,24 @@ import { useState } from "react";
 import { extractErrorMessage } from "@/api/client";
 import { settingsApi } from "@/api/settings.api";
 import { Icon } from "@/components/ui/Icon";
+import type { IconName } from "@/components/ui/Icon";
 import { useAuth } from "@/features/auth/useAuth";
+import { useTheme } from "@/lib/theme";
+import type { ThemeMode } from "@/lib/theme";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { ConnectTelegramDialog } from "./ConnectTelegramDialog";
+
+const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: IconName }[] = [
+  { mode: "light", label: "Light", icon: "light_mode" },
+  { mode: "dark", label: "Dark", icon: "dark_mode" },
+  { mode: "system", label: "System", icon: "brightness_auto" },
+];
 
 const INTEGRATIONS_QUERY_KEY = ["settings", "integrations"];
 
 export function SettingsPage() {
   const { user, logout } = useAuth();
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const queryClient = useQueryClient();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [connectTelegramOpen, setConnectTelegramOpen] = useState(false);
@@ -112,6 +122,34 @@ export function SettingsPage() {
           {disconnectMutation.isError && (
             <p className="text-body-sm text-error">{extractErrorMessage(disconnectMutation.error)}</p>
           )}
+        </div>
+      </section>
+
+      {/* Appearance */}
+      <section className="flex flex-col gap-base">
+        <h3 className="px-xs font-mono text-label-mono uppercase text-on-surface-variant">Appearance</h3>
+        <div className="surface-card flex flex-col gap-sm p-md">
+          <span className="text-body-sm text-on-surface-variant">Theme</span>
+          <div className="grid grid-cols-3 gap-sm">
+            {THEME_OPTIONS.map(({ mode, label, icon }) => {
+              const active = themeMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setThemeMode(mode)}
+                  className={`flex flex-col items-center gap-xs rounded-xl border px-sm py-md transition-colors ${
+                    active
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-outline-variant text-on-surface-variant hover:bg-white/5"
+                  }`}
+                >
+                  <Icon name={icon} size={22} />
+                  <span className="text-body-sm font-medium">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 

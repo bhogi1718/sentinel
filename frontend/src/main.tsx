@@ -6,18 +6,21 @@ import { App } from "./App.tsx";
 import { AuthProvider } from "./features/auth/AuthContext.tsx";
 import "./index.css";
 import { queryClient } from "./lib/queryClient.ts";
+import { ThemeProvider } from "./lib/theme.tsx";
 import { SocketProvider } from "./realtime/SocketProvider.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <SocketProvider>
-            <App />
-          </SocketProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <SocketProvider>
+              <App />
+            </SocketProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
