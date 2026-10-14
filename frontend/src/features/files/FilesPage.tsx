@@ -22,7 +22,17 @@ export function FilesPage() {
   const { data: device } = useDeviceStatus();
   const isConnected = device?.isOnline ?? false;
   const [currentPath, setCurrentPath] = useState("");
+  const [search, setSearch] = useState("");
   const { data: entries, isLoading, isError, error, refetch } = useFiles(currentPath);
+
+  // Folders first, then files; filtered by the search box. Within each group
+  // the server order is preserved.
+  const visibleEntries = useMemo(() => {
+    const list = entries ?? [];
+    const term = search.trim().toLowerCase();
+    const filtered = term ? list.filter((e) => e.name.toLowerCase().includes(term)) : list;
+    return [...filtered].sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory));
+  }, [entries, search]);
 
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split("/").filter(Boolean);
@@ -65,6 +75,20 @@ export function FilesPage() {
         ))}
       </div>
 
+      {isConnected && (
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">
+            <Icon name="search" size={18} />
+          </span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search this folder…"
+            className="w-full rounded-lg bg-surface-container-highest py-2.5 pl-10 pr-4 text-body-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+      )}
+
       {!isConnected ? (
         <div className="surface-card py-16 text-center text-body-sm text-on-surface-variant">
           Device is offline. Files are unavailable until the agent reconnects.
@@ -87,9 +111,9 @@ export function FilesPage() {
             Retry
           </button>
         </div>
-      ) : entries && entries.length > 0 ? (
+      ) : visibleEntries.length > 0 ? (
         <div className="flex flex-col gap-xs">
-          {entries.map((entry) => (
+          {visibleEntries.map((entry) => (
             <div
               key={entry.name}
               className="surface-card flex items-center gap-sm p-sm"
@@ -136,7 +160,7 @@ export function FilesPage() {
         </div>
       ) : (
         <div className="surface-card py-16 text-center text-body-sm text-on-surface-variant">
-          This folder is empty.
+          {search.trim() ? "No files match your search." : "This folder is empty."}
         </div>
       )}
     </div>

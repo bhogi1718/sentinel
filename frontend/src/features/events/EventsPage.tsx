@@ -5,6 +5,16 @@ import type { EventType } from "@/types/event";
 import { EventRow } from "./EventRow";
 import { useEvents } from "./useEvents";
 
+/// "Today" / "Yesterday" / "Mon, Oct 13" for a timeline date header.
+function dayLabel(d: Date): string {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
 export function EventsPage() {
   const [page, setPage] = useState(1);
   const [type, setType] = useState<EventType | "">("");
@@ -27,6 +37,23 @@ export function EventsPage() {
     () => (data ? data.items.filter((e) => eventDisplayMap[e.type].tone === "error").length : 0),
     [data],
   );
+
+  // Group the visible events by calendar day for a timeline with date
+  // headers, preserving the server's newest-first order.
+  const groupedByDay = useMemo(() => {
+    const groups: { day: string; label: string; items: typeof filteredItems }[] = [];
+    for (const event of filteredItems) {
+      const d = new Date(event.occurredAt);
+      const day = d.toDateString();
+      let group = groups.find((g) => g.day === day);
+      if (!group) {
+        group = { day, label: dayLabel(d), items: [] };
+        groups.push(group);
+      }
+      group.items.push(event);
+    }
+    return groups;
+  }, [filteredItems]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
@@ -87,10 +114,19 @@ export function EventsPage() {
               <div key={i} className="h-16 animate-pulse rounded-lg bg-surface-container-low" />
             ))}
           </div>
-        ) : filteredItems.length > 0 ? (
-          <div className="flex flex-col gap-xs">
-            {filteredItems.map((event) => (
-              <EventRow key={event.id} event={event} />
+        ) : groupedByDay.length > 0 ? (
+          <div className="flex flex-col gap-md">
+            {groupedByDay.map((group) => (
+              <div key={group.day} className="flex flex-col gap-xs">
+                <div className="sticky top-0 z-10 flex items-center gap-sm bg-surface/80 py-1 backdrop-blur-sm">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">{group.label}</span>
+                  <span className="h-px flex-1 bg-outline-variant" />
+                  <span className="font-mono text-[10px] text-on-surface-variant">{group.items.length}</span>
+                </div>
+                {group.items.map((event) => (
+                  <EventRow key={event.id} event={event} />
+                ))}
+              </div>
             ))}
           </div>
         ) : (
