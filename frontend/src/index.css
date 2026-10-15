@@ -71,67 +71,69 @@
   --space-margin-desktop: 48px;
 }
 
-/* Dark: Midnight Graphite + Champagne Gold (default). */
+/* Dark: deep ink base + aurora-mint signal accent (default). The accent
+   doubles as the "healthy/online" colour so the console glows when all is
+   well; amber = warning, coral = critical. */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --t-surface: #0b0d12;
-  --t-surface-lowest: #080a0e;
-  --t-surface-low: #101319;
-  --t-surface-container: #14171f;
-  --t-surface-high: #1c2029;
-  --t-surface-highest: #242935;
-  --t-surface-bright: #2a2f3a;
+  --t-surface: #0a0d12;
+  --t-surface-lowest: #06080b;
+  --t-surface-low: #0f141c;
+  --t-surface-container: #141a24;
+  --t-surface-high: #1b2330;
+  --t-surface-highest: #232d3d;
+  --t-surface-bright: #2b3647;
 
-  --t-text: #e8e6e1;
-  --t-text-muted: #8a8f9c;
-  --t-outline: #6f7482;
-  --t-border: #2a2f3a;
+  --t-text: #e7ecf3;
+  --t-text-muted: #8893a6;
+  --t-outline: #5a6476;
+  --t-border: #212a38;
 
-  --t-accent: #c9a96e;
-  --t-on-accent: #0b0d12;
+  --t-accent: #46e0b4;
+  --t-on-accent: #04130d;
 
-  --t-tertiary: #b9b3a6;
-  --t-tertiary-muted: #5e5b55;
+  --t-tertiary: #7c8cf8;
+  --t-tertiary-muted: #3a4466;
 
-  --t-success: #7fb78f;
-  --t-warning: #d9a55c;
-  --t-danger: #c96b6b;
-  --t-danger-container: #4a1f1f;
-  --t-on-danger-container: #f2c9c9;
+  --t-success: #46e0b4;
+  --t-warning: #f5b445;
+  --t-danger: #ff6b6b;
+  --t-danger-container: #3a1515;
+  --t-on-danger-container: #ffd5d5;
 
-  --t-glass: rgb(20 23 31 / 0.82);
+  --t-glass: rgb(16 22 32 / 0.82);
 }
 
-/* Light: Warm Ivory + Espresso. */
+/* Light: cool off-white + deep teal accent (for contrast on light). */
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --t-surface: #f7f4ee;
+  --t-surface: #f3f6fb;
   --t-surface-lowest: #ffffff;
-  --t-surface-low: #fbf9f5;
-  --t-surface-container: #f2eee6;
-  --t-surface-high: #efeae0;
-  --t-surface-highest: #e6e0d3;
+  --t-surface-low: #ffffff;
+  --t-surface-container: #ffffff;
+  --t-surface-high: #eef2f8;
+  --t-surface-highest: #e4eaf3;
   --t-surface-bright: #ffffff;
 
-  --t-text: #2a2420;
-  --t-text-muted: #7a7068;
-  --t-outline: #9a9086;
-  --t-border: #e2dbce;
+  --t-text: #0d1420;
+  --t-text-muted: #5d6677;
+  --t-outline: #aeb6c4;
+  --t-border: #e2e8f1;
 
-  --t-accent: #8b5e34;
+  --t-accent: #0e9e78;
   --t-on-accent: #ffffff;
 
-  --t-tertiary: #5e5249;
-  --t-tertiary-muted: #b9ad9d;
+  --t-tertiary: #4f5bd5;
+  --t-tertiary-muted: #c3c9f0;
 
-  --t-success: #3f7d52;
-  --t-warning: #9a6a1f;
-  --t-danger: #a4453f;
-  --t-danger-container: #f6dedb;
-  --t-on-danger-container: #5c1d19;
+  --t-success: #0e9e78;
+  --t-warning: #b4791a;
+  --t-danger: #d64545;
+  --t-danger-container: #fbe3e3;
+  --t-on-danger-container: #5c1a1a;
 
   --t-glass: rgb(255 255 255 / 0.85);
 }

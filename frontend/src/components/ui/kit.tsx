@@ -139,6 +139,91 @@ export function Button({
   );
 }
 
+/// The consistent spine at the top of every page: a title, an optional
+/// one-line descriptor, and an optional right-aligned slot (status or a
+/// primary action).
+export function PageHeader({
+  title,
+  subtitle,
+  icon,
+  trailing,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: IconName;
+  trailing?: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-md">
+      <div className="flex items-center gap-sm">
+        {icon && (
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Icon name={icon} size={22} />
+          </div>
+        )}
+        <div className="flex flex-col gap-0.5">
+          <h1 className="text-headline-lg-mobile font-semibold leading-none text-on-surface">{title}</h1>
+          {subtitle && <span className="text-body-sm text-on-surface-variant">{subtitle}</span>}
+        </div>
+      </div>
+      {trailing && <div className="shrink-0">{trailing}</div>}
+    </div>
+  );
+}
+
+/// A text input with an optional leading icon, styled for the console.
+export function Input({
+  icon,
+  className = "",
+  ...rest
+}: { icon?: IconName } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className="relative">
+      {icon && (
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">
+          <Icon name={icon} size={18} />
+        </span>
+      )}
+      <input
+        className={`w-full rounded-lg border border-outline-variant bg-surface-container py-2.5 text-body-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/60 focus:border-primary/60 focus:ring-1 focus:ring-primary/30 ${
+          icon ? "pl-10 pr-3" : "px-3"
+        } ${className}`}
+        {...rest}
+      />
+    </div>
+  );
+}
+
+/// A segmented control for a small set of mutually exclusive options.
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  className = "",
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`inline-flex gap-0.5 rounded-lg border border-outline-variant bg-surface-container p-0.5 ${className}`}>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 rounded-md px-sm py-1.5 font-mono text-label-mono uppercase tracking-wider transition-colors ${
+            value === opt.value ? "bg-primary text-on-primary" : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /// A centred placeholder for empty / loading / error states.
 export function StateBlock({ icon, title, children }: { icon: IconName; title: string; children?: ReactNode }) {
   return (
