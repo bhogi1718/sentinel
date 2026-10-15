@@ -1,40 +1,65 @@
 # Sentinel
 
-Personal remote laptop monitoring and control platform. Single-owner, not a SaaS product.
+A personal remote monitoring and control platform for my own Windows laptop. Single-owner by design, not a SaaS product.
 
-Built as a full stack: a Rust Windows Service agent reports live system state to a Node/Express backend over Socket.IO, and a React dashboard lets you check on and control the laptop from anywhere.
+A **Rust agent** runs as a Windows Service and streams live system state to a **Node/Express backend** over Socket.IO. A **React dashboard** lets me check on the laptop, watch its screen live, and send commands from anywhere.
 
 ## Features
 
-- **Live device status** — online/offline tracking, CPU/RAM/disk metrics, and a real-time event feed (boot, lock/unlock, sleep/wake, network, battery)
-- **Remote commands** — lock, restart, shutdown, sleep, log off, and kill individual processes
-- **File browser** — browse the laptop's filesystem remotely
-- **Screenshots on demand** — grab the current screen state
-- **Telegram alerts** — optional push notifications for device events, configured entirely from the dashboard
-- **Auth** — JWT-based login with refresh tokens, no forgot-password flow by design (single admin, recoverable via a local script)
-- **Runs as a Windows Service** — the agent auto-starts on boot and auto-reconnects if the backend drops
+- **Live device status:** online/offline tracking, CPU, RAM and disk metrics, and a real-time event feed (boot, lock/unlock, sleep/wake, network, battery)
+- **Live screen view:** watch the laptop's screen from the dashboard in near real time, with a live FPS readout, a stale-frame warning and a full-screen mode. View-only: it cannot click or type.
+- **"Being viewed" banner:** while a live view is running, the laptop shows an always-on-top notice that its screen is being viewed. It can be turned off in `agent.toml`.
+- **Annotation:** freeze a frame and draw on it (pen, arrow, box, highlight, colours, undo), save it as a PNG, or mirror the drawing onto the laptop's screen as a click-through overlay
+- **Remote commands:** lock, restart, shutdown, sleep, log off, and kill individual processes
+- **File browser:** browse and download files from the laptop, with in-folder search
+- **Screenshots on demand:** grab a full-resolution capture of the current screen
+- **Telegram alerts:** optional push notifications for device events, set up entirely from the dashboard
+- **Auth:** JWT login with refresh tokens. No forgot-password flow by design (single admin, recoverable with a local script).
+- **Runs as a Windows Service:** the agent starts on boot and reconnects on its own if the backend drops
 
-**Live dashboard:** your Vercel deployment URL (e.g. `https://sentinel.vercel.app`) — this is the real, deployed instance the laptop agent actually reports to. Use this to check on or control the laptop day-to-day.
+## Dashboard
 
-`http://localhost:5173` (started via `npm run dev` in `frontend/`) is a separate local dev environment, proxied to a **local** backend on port 5000 — it has no connection to the real agent and will show "Device is not currently connected" unless you're specifically working on frontend code against a local backend. For anything device-related, use the live dashboard link above instead.
+The dashboard uses a calm, instrument-panel look called **Console**: deep ink with a single aurora-mint accent that also signals healthy/online (amber for warnings, coral for critical). It has light, dark and system themes and works well on a phone.
+
+| Page | What's on it |
+|---|---|
+| Dashboard | Identity and live status, CPU / memory / storage / power at a glance, quick remote controls, recent activity |
+| Device | Live screen view with annotation, resource gauges, network details, quick and power actions |
+| Events | Vertical timeline grouped by day, with search and type filters |
+| Files | Breadcrumb navigation, search, folders first, per-file download |
+| Processes | Search, Apps / Background filter, per-process CPU bars, kill with confirmation |
+| Settings | Account, Telegram integration, appearance (theme), session |
+
+The live deployment on Vercel is the instance the laptop agent actually reports to. `http://localhost:5173` (from `npm run dev` in `frontend/`) is a separate local environment pointed at a **local** backend on port 5000, so it shows "Device is not currently connected" unless you're running the agent against it.
 
 ## Stack
 
-- `backend/` — Node.js, Express, TypeScript, Prisma, Socket.IO — deployed on **Render** (web service)
-- `frontend/` — React, Vite, TypeScript, Tailwind CSS — deployed on **Vercel**
-- `agent/` — Rust Windows agent, runs as a Windows Service (`SentinelAgent`)
-- Database — PostgreSQL on **Neon** (serverless, reachable directly over TLS — no SSH tunnel needed, locally or in production)
+| Part | Technologies | Hosted on |
+|---|---|---|
+| `agent/` | Rust, Win32 APIs (GDI capture, layered windows), runs as the `SentinelAgent` Windows Service | the laptop |
+| `backend/` | Node.js, Express, TypeScript, Prisma, Socket.IO | Render |
+| `frontend/` | React, Vite, TypeScript, Tailwind CSS | Vercel |
+| Database | PostgreSQL (serverless, reached directly over TLS, no SSH tunnel) | Neon |
 
 See [Deployment](#deployment) for how the hosted pieces are set up.
+
+## How live view works
+
+1. Starting a view on the Device page sends `stream:start` to the backend, which forwards it to the agent. Only one live session runs at a time.
+2. The agent's per-session helper process captures the screen with GDI, downscales it to 1280 px wide and JPEG-encodes it (quality 55), roughly twice a second.
+3. Frames go back over the existing Socket.IO connection as binary messages tagged with the session id, and the backend relays them only to dashboards that are actually watching.
+4. Stopping the view, closing the tab or the agent disconnecting ends the session. The "being viewed" banner hides a couple of seconds after the last frame.
+
+Shapes mirrored to the laptop are drawn on a transparent, click-through, display-only window. It never calls an input API, and it clears itself 45 seconds after the last update. Remote mouse and keyboard control is deliberately not implemented.
 
 ---
 
 ## Prerequisites
 
 - Node.js (LTS)
-- Rust toolchain (`rustup`, MSVC target) — only needed to build/modify the agent
-- A Neon account + connection string (free tier — see [Deployment](#deployment))
-- A Telegram bot token + chat ID (optional — see [Telegram notifications](#telegram-notifications))
+- Rust toolchain (`rustup`, MSVC target) - only needed to build/modify the agent
+- A Neon account + connection string (free tier - see [Deployment](#deployment))
+- A Telegram bot token + chat ID (optional - see [Telegram notifications](#telegram-notifications))
 
 ---
 
@@ -72,7 +97,7 @@ npx prisma migrate dev
 npm run seed              # creates the admin user + laptop agent device token
 ```
 
-`npm run seed` prints the device token once — copy it somewhere safe, it's needed for the Rust agent (`agent/agent.toml`) and cannot be retrieved again. If lost, rotate it instead of re-seeding:
+`npm run seed` prints the device token once - copy it somewhere safe, it's needed for the Rust agent (`agent/agent.toml`) and cannot be retrieved again. If lost, rotate it instead of re-seeding:
 
 ```powershell
 npx tsx prisma/rotate-device-token.ts
@@ -114,7 +139,7 @@ cd agent
 .\scripts\install-service.ps1
 ```
 
-Builds the release binary, registers the service with auto-start and auto-restart-on-failure, and starts it immediately. Re-running this script is safe — it stops, reconfigures, and restarts the existing service.
+Builds the release binary, registers the service with auto-start and auto-restart-on-failure, and starts it immediately. Re-running this script is safe - it stops, reconfigures, and restarts the existing service.
 
 Logs go to `agent/target/release/sentinel-agent.log.<date>` (the service has no console).
 
@@ -132,7 +157,7 @@ cd agent
 cargo run
 ```
 
-Same binary, same logic — it detects it wasn't launched by the Windows Service Control Manager and falls back to console mode automatically. Useful when iterating on agent code, since you get live logs and Ctrl+C to stop. Logs go to stdout instead of a file in this mode.
+Same binary, same logic - it detects it wasn't launched by the Windows Service Control Manager and falls back to console mode automatically. Useful when iterating on agent code, since you get live logs and Ctrl+C to stop. Logs go to stdout instead of a file in this mode.
 
 ### Troubleshooting: agent can't reach the backend
 
@@ -143,7 +168,7 @@ WARN hyper_util::client::legacy::connect::http: tcp set_nodelay error: An invali
 ERROR sentinel_agent::socket_client: Namespace connect ack not received in time. Retrying in 5s...
 ```
 
-the `set_nodelay` warning is a red herring — `hyper-util` only logs it, it never fails the connection. The actual symptom is the namespace-ack timeout. In practice this has been caused by the **installed service running a stale binary** that predates the current `Cargo.lock`/source, hitting a Windows socket-stack quirk that a fresh build doesn't reproduce.
+the `set_nodelay` warning is a red herring - `hyper-util` only logs it, it never fails the connection. The actual symptom is the namespace-ack timeout. In practice this has been caused by the **installed service running a stale binary** that predates the current `Cargo.lock`/source, hitting a Windows socket-stack quirk that a fresh build doesn't reproduce.
 
 Fix: rebuild and reinstall.
 
@@ -152,30 +177,30 @@ cd agent
 .\scripts\install-service.ps1
 ```
 
-The script now always stops the service and rebuilds before reinstalling (it used to skip the build if a binary already existed, which is how a stale binary could linger silently — see the script's own comments). If you're debugging this manually rather than via the script, remember the exe is locked while the service (or the helper, which runs separately per-session) is running — stop both before trying to overwrite it.
+The script now always stops the service and rebuilds before reinstalling (it used to skip the build if a binary already existed, which is how a stale binary could linger silently - see the script's own comments). If you're debugging this manually rather than via the script, remember the exe is locked while the service (or the helper, which runs separately per-session) is running - stop both before trying to overwrite it.
 
 ---
 
 ## Deployment
 
-Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Render** (backend), **Vercel** (frontend). All dashboard-driven — no CLI provisioning.
+Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Render** (backend), **Vercel** (frontend). All dashboard-driven - no CLI provisioning.
 
-### 1. Database — Neon
+### 1. Database: Neon
 
 1. Create an account at [neon.tech](https://neon.tech), create a project (any region close to your Render region).
-2. **Dashboard → Connection Details** → copy the connection string (toggle **Pooled connection** off — a single always-running backend doesn't need PgBouncer). It looks like `postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require`.
+2. **Dashboard → Connection Details** → copy the connection string (toggle **Pooled connection** off - a single always-running backend doesn't need PgBouncer). It looks like `postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require`.
 3. Keep this for the backend's `DATABASE_URL` in the next step.
 
-### 2. Backend — Render
+### 2. Backend: Render
 
 1. Create an account at [render.com](https://render.com), connect your GitHub account, **New → Web Service**, pick this repo.
-2. **Root Directory:** `backend`. **Runtime:** Node. **Build Command:** `npm ci --include=dev && npm run build` (`npm ci` installs exactly what's in `package-lock.json`, no surprise version drift; `--include=dev` is required because `NODE_ENV=production` below otherwise makes npm skip `devDependencies` entirely — which is where `typescript` and every `@types/*` package live, so the build needs them even though `NODE_ENV` is `production`). **Start Command:** `npm run prisma:deploy && npm run start`.
+2. **Root Directory:** `backend`. **Runtime:** Node. **Build Command:** `npm ci --include=dev && npm run build` (`npm ci` installs exactly what's in `package-lock.json`, no surprise version drift; `--include=dev` is required because `NODE_ENV=production` below otherwise makes npm skip `devDependencies` entirely - which is where `typescript` and every `@types/*` package live, so the build needs them even though `NODE_ENV` is `production`). **Start Command:** `npm run prisma:deploy && npm run start`.
 3. **Instance type:** Free.
-4. Add environment variables (**Environment** tab) — same keys as `backend/.env.example`: `DATABASE_URL` (from Neon above), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (your Vercel URL — you'll add this after step 3, can update later), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEVICE_NAME`, `NODE_ENV=production`.
-5. Deploy. Once live, note the assigned URL (`https://<something>.onrender.com`) — this is your `server_url` for the agent and the URL you'll monitor in step 4.
-6. Run the one-time seed against the new database: from your machine, temporarily point `backend/.env`'s `DATABASE_URL` at the same Neon connection string and run `cd backend && npm run seed` (prints the device token once — save it for the agent).
+4. Add environment variables (**Environment** tab) - same keys as `backend/.env.example`: `DATABASE_URL` (from Neon above), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (your Vercel URL - you'll add this after step 3, can update later), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEVICE_NAME`, `NODE_ENV=production`.
+5. Deploy. Once live, note the assigned URL (`https://<something>.onrender.com`) - this is your `server_url` for the agent and the URL you'll monitor in step 4.
+6. Run the one-time seed against the new database: from your machine, temporarily point `backend/.env`'s `DATABASE_URL` at the same Neon connection string and run `cd backend && npm run seed` (prints the device token once - save it for the agent).
 
-### 3. Frontend — Vercel
+### 3. Frontend: Vercel
 
 1. Create an account at [vercel.com](https://vercel.com), connect GitHub, **Add New → Project**, pick this repo.
 2. **Root Directory:** `frontend`. Framework preset: Vite (auto-detected).
@@ -187,7 +212,7 @@ Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Rend
 
 Render's free web service sleeps after ~15 minutes idle, which would drop the agent's persistent connection.
 
-**Do not use a GitHub Actions scheduled workflow for this** — it was the original approach here, but GitHub does not guarantee tight schedules (`*/10 * * * *`) actually fire every 10 minutes. In practice, on a low-activity repo, GitHub silently throttles it to once every few **hours**, which is nowhere near frequent enough — the backend still sleeps and wakes repeatedly between pings, which is exactly what caused the agent's real connection problems during this project's migration.
+**Do not use a GitHub Actions scheduled workflow for this** - it was the original approach here, but GitHub does not guarantee tight schedules (`*/10 * * * *`) actually fire every 10 minutes. In practice, on a low-activity repo, GitHub silently throttles it to once every few **hours**, which is nowhere near frequent enough - the backend still sleeps and wakes repeatedly between pings, which is exactly what caused the agent's real connection problems during this project's migration.
 
 Use **UptimeRobot** instead (free tier, purpose-built for this, reliable 5-minute interval):
 
@@ -196,7 +221,7 @@ Use **UptimeRobot** instead (free tier, purpose-built for this, reliable 5-minut
 3. **Monitor Type:** HTTP(s)
 4. **URL:** `https://<your-render-url>/health`
 5. **Monitoring Interval:** 5 minutes
-6. Save. UptimeRobot's dashboard also gives you uptime history and can email you if the backend ever goes down for real (not just idle-sleep) — a nice side benefit the GitHub Actions approach never had.
+6. Save. UptimeRobot's dashboard also gives you uptime history and can email you if the backend ever goes down for real (not just idle-sleep) - a nice side benefit the GitHub Actions approach never had.
 
 ### 5. Point the agent at production
 
@@ -206,9 +231,9 @@ Update `agent/agent.toml`'s `server_url` to the Render URL from step 2.5, then r
 
 ## Telegram notifications
 
-Optional. If configured, every event also sends a message to your Telegram chat. Configured entirely in-app now (Settings → Integrations → Connect) — no `.env` edit or redeploy needed, and it can be disconnected the same way.
+Optional. If configured, every event also sends a message to your Telegram chat. Configured entirely in-app now (Settings → Integrations → Connect) - no `.env` edit or redeploy needed, and it can be disconnected the same way.
 
-1. Create a bot via [@BotFather](https://t.me/BotFather) (`/newbot`) — **never share the resulting token**, treat it like a password
+1. Create a bot via [@BotFather](https://t.me/BotFather) (`/newbot`) - **never share the resulting token**, treat it like a password
 2. Message your new bot once (e.g. `/start`)
 3. Fetch your chat ID:
    ```powershell
@@ -217,7 +242,7 @@ Optional. If configured, every event also sends a message to your Telegram chat.
    Look for `"chat": { "id": ... }` in the response.
 4. On the dashboard's Settings page, click **Connect** under Telegram Alerts and paste in the bot token and chat ID. The backend sends a real test message before saving, so a wrong chat ID fails immediately instead of silently sitting broken.
 
-The bot token and chat ID are stored in the database (`Settings` table), not `.env` — connecting is optional, the app runs fine without it, notifications are just silently skipped until connected.
+The bot token and chat ID are stored in the database (`Settings` table), not `.env` - connecting is optional, the app runs fine without it, notifications are just silently skipped until connected.
 
 ---
 
@@ -240,4 +265,4 @@ All three should report zero errors before committing.
 3. Agent: either already running as the `SentinelAgent` Windows Service (nothing to start), or `cd agent && cargo run` in its own terminal for development
 4. Open `http://localhost:5173`
 
-These two terminals are local-dev-only conveniences; once deployed, Render and Vercel run the backend and frontend permanently and none of this local juggling is needed. The agent's Windows Service already works this way today — no terminal required on your laptop.
+These two terminals are local-dev-only conveniences; once deployed, Render and Vercel run the backend and frontend permanently and none of this local juggling is needed. The agent's Windows Service already works this way today - no terminal required on your laptop.

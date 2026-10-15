@@ -30,3 +30,6 @@ agent/agent.toml
 
 # Third-party tooling, not part of this project
 nextlevelbuilder-ui-ux-pro-max-skill-Public-main/
+
+# Local editor state
+.claude/
