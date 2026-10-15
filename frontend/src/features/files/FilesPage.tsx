@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { fileApi } from "@/api/file.api";
 import { extractErrorMessage } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
+import { Button, Card, Input, PageHeader, StateBlock } from "@/components/ui/kit";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { useFiles } from "./useFiles";
 
@@ -25,8 +26,11 @@ export function FilesPage() {
   const [search, setSearch] = useState("");
   const { data: entries, isLoading, isError, error, refetch } = useFiles(currentPath);
 
-  // Folders first, then files; filtered by the search box. Within each group
-  // the server order is preserved.
+  const breadcrumbs = useMemo(() => {
+    const parts = currentPath.split("/").filter(Boolean);
+    return parts.map((part, index) => ({ label: part, path: parts.slice(0, index + 1).join("/") }));
+  }, [currentPath]);
+
   const visibleEntries = useMemo(() => {
     const list = entries ?? [];
     const term = search.trim().toLowerCase();
@@ -34,40 +38,32 @@ export function FilesPage() {
     return [...filtered].sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory));
   }, [entries, search]);
 
-  const breadcrumbs = useMemo(() => {
-    const parts = currentPath.split("/").filter(Boolean);
-    return parts.map((part, index) => ({
-      label: part,
-      path: parts.slice(0, index + 1).join("/"),
-    }));
-  }, [currentPath]);
-
   function openFolder(name: string): void {
     setCurrentPath((prev) => (prev ? `${prev}/${name}` : name));
+    setSearch("");
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
-      <div className="flex items-center gap-xs overflow-x-auto py-1">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-md">
+      <PageHeader title="Files" subtitle="Browse and download from the laptop" icon="folder" />
+
+      {/* Breadcrumb path */}
+      <div className="flex items-center gap-xs overflow-x-auto">
         <button
           type="button"
           onClick={() => setCurrentPath("")}
-          className={`flex shrink-0 items-center gap-xs transition-colors ${
-            currentPath === "" ? "text-primary" : "text-on-surface-variant hover:text-on-surface"
-          }`}
+          className={`flex shrink-0 items-center gap-xs rounded-md px-1.5 py-1 transition-colors ${currentPath === "" ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
         >
-          <Icon name="home" size={18} />
+          <Icon name="home" size={16} />
           <span className="font-mono text-label-mono uppercase">Root</span>
         </button>
         {breadcrumbs.map((crumb, index) => (
           <div key={crumb.path} className="flex shrink-0 items-center gap-xs">
-            <Icon name="chevron_right" size={16} className="text-on-surface-variant/50" />
+            <Icon name="chevron_right" size={14} className="text-on-surface-variant/50" />
             <button
               type="button"
               onClick={() => setCurrentPath(crumb.path)}
-              className={`font-mono text-label-mono uppercase transition-colors ${
-                index === breadcrumbs.length - 1 ? "text-primary" : "text-on-surface-variant hover:text-on-surface"
-              }`}
+              className={`font-mono text-label-mono uppercase transition-colors ${index === breadcrumbs.length - 1 ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
             >
               {crumb.label}
             </button>
@@ -75,24 +71,12 @@ export function FilesPage() {
         ))}
       </div>
 
-      {isConnected && (
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">
-            <Icon name="search" size={18} />
-          </span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search this folder…"
-            className="w-full rounded-lg bg-surface-container-highest py-2.5 pl-10 pr-4 text-body-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-      )}
+      {isConnected && <Input icon="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search this folder…" />}
 
       {!isConnected ? (
-        <div className="surface-card py-16 text-center text-body-sm text-on-surface-variant">
-          Device is offline. Files are unavailable until the agent reconnects.
-        </div>
+        <StateBlock icon="folder" title="Device offline">
+          Files are unavailable until the agent reconnects.
+        </StateBlock>
       ) : isLoading ? (
         <div className="flex flex-col gap-xs">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -100,23 +84,18 @@ export function FilesPage() {
           ))}
         </div>
       ) : isError ? (
-        <div className="surface-card flex flex-col items-center gap-sm py-16 text-center">
-          <Icon name="folder" size={32} className="text-error" />
-          <p className="text-body-sm text-error">{extractErrorMessage(error)}</p>
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="mt-xs rounded-lg bg-surface-container px-4 py-2 font-mono text-label-mono uppercase text-on-surface transition-colors hover:bg-surface-container-high"
-          >
+        <StateBlock icon="error_outline" title="Could not list this folder">
+          <p className="text-error">{extractErrorMessage(error)}</p>
+          <Button variant="secondary" className="mt-sm" onClick={() => void refetch()}>
             Retry
-          </button>
-        </div>
+          </Button>
+        </StateBlock>
       ) : visibleEntries.length > 0 ? (
-        <div className="flex flex-col gap-xs">
+        <Card className="flex flex-col divide-y divide-outline-variant/60">
           {visibleEntries.map((entry) => (
             <div
               key={entry.name}
-              className="surface-card flex items-center gap-sm p-sm"
+              className="flex items-center gap-sm px-sm py-2.5 transition-colors hover:bg-surface-container/60"
               onClick={entry.isDirectory ? () => openFolder(entry.name) : undefined}
               onKeyDown={
                 entry.isDirectory
@@ -135,7 +114,7 @@ export function FilesPage() {
             >
               <Icon
                 name={entry.isDirectory ? "folder" : "picture_as_pdf"}
-                size={22}
+                size={20}
                 className={entry.isDirectory ? "text-primary" : "text-on-surface-variant"}
               />
               <div className="flex min-w-0 flex-1 flex-col">
@@ -144,10 +123,12 @@ export function FilesPage() {
                   {entry.isDirectory ? "Folder" : formatSize(entry.sizeBytes)} · {formatModifiedAt(entry.modifiedAt)}
                 </span>
               </div>
-              {!entry.isDirectory && (
+              {entry.isDirectory ? (
+                <Icon name="chevron_right" size={18} className="shrink-0 text-on-surface-variant/50" />
+              ) : (
                 <a
                   href={fileApi.downloadUrl(currentPath ? `${currentPath}/${entry.name}` : entry.name)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
                   title="Download"
                   aria-label={`Download ${entry.name}`}
                   onClick={(e) => e.stopPropagation()}
@@ -157,11 +138,9 @@ export function FilesPage() {
               )}
             </div>
           ))}
-        </div>
+        </Card>
       ) : (
-        <div className="surface-card py-16 text-center text-body-sm text-on-surface-variant">
-          {search.trim() ? "No files match your search." : "This folder is empty."}
-        </div>
+        <StateBlock icon="folder" title={search.trim() ? "No files match your search" : "This folder is empty"} />
       )}
     </div>
   );

@@ -2,29 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { extractErrorMessage } from "@/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { Button, Card, Input, PageHeader, Segmented, StateBlock } from "@/components/ui/kit";
 import { useDeviceStatus } from "@/features/device/useDeviceStatus";
 import { useKillProcess } from "./useKillProcess";
 import { useProcesses } from "./useProcesses";
 
-// Gives the agent a moment to actually terminate the process before the
-// list is re-fetched - refetching immediately on ack would often still
-// show the just-killed process, since ack only means "TerminateProcess was
-// called successfully," not that the process table has updated yet.
 const REFETCH_DELAY_AFTER_KILL_MS = 500;
 
 function formatMemory(bytes: number): string {
   const mb = bytes / (1024 * 1024);
-  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  if (mb < 1024) return `${mb.toFixed(0)} MB`;
   return `${(mb / 1024).toFixed(2)} GB`;
 }
 
 type ProcessFilter = "all" | "apps" | "background";
-
-const FILTER_OPTIONS: { key: ProcessFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "apps", label: "Apps" },
-  { key: "background", label: "Background" },
-];
 
 export function ProcessesPage() {
   const { data: device } = useDeviceStatus();
@@ -37,155 +28,116 @@ export function ProcessesPage() {
   });
 
   useEffect(() => {
-    if (isConnected && !isFetched) {
-      void refetch();
-    }
+    if (isConnected && !isFetched) void refetch();
   }, [isConnected, isFetched, refetch]);
 
   const filteredProcesses = useMemo(() => {
     if (!processes) return [];
     let result = processes;
-    if (filter === "apps") result = result.filter((process) => process.isApp);
-    if (filter === "background") result = result.filter((process) => !process.isApp);
+    if (filter === "apps") result = result.filter((p) => p.isApp);
+    if (filter === "background") result = result.filter((p) => !p.isApp);
     if (search.trim()) {
       const term = search.toLowerCase();
-      result = result.filter(
-        (process) => process.name.toLowerCase().includes(term) || String(process.pid).includes(term),
-      );
+      result = result.filter((p) => p.name.toLowerCase().includes(term) || String(p.pid).includes(term));
     }
     return result.slice().sort((a, b) => b.cpuPercent - a.cpuPercent);
   }, [processes, search, filter]);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
-      <div className="flex flex-col gap-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <span className="font-mono text-label-mono uppercase tracking-widest text-primary">Active Runtime</span>
-            <h1 className="text-headline-lg-mobile font-semibold text-on-surface">System Processes</h1>
-          </div>
-          <button
-            type="button"
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-md">
+      <PageHeader
+        title="Processes"
+        subtitle={processes ? `${processes.length} running` : "Live process monitor"}
+        icon="terminal"
+        trailing={
+          <Button
+            variant="secondary"
+            icon="sync"
             disabled={!isConnected || isFetching}
             onClick={() => void refetch()}
-            title={isConnected ? "Refresh" : "Device is offline"}
-            aria-label={isConnected ? "Refresh process list" : "Device is offline"}
-            className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
+            aria-label="Refresh process list"
+            className={isFetching ? "[&_.material-symbols-outlined]:animate-spin" : ""}
           >
-            <Icon name="sync" size={20} className={isFetching ? "animate-spin" : ""} />
-          </button>
-        </div>
+            Refresh
+          </Button>
+        }
+      />
 
-        <div className="flex flex-col gap-sm md:flex-row md:items-center">
-          <div className="relative flex flex-1 items-center">
-            <span className="absolute left-md text-on-surface-variant">
-              <Icon name="search" size={20} />
-            </span>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              disabled={!processes || processes.length === 0}
-              placeholder="Filter by name or PID..."
-              className="w-full rounded-xl bg-surface-container py-sm pl-xl pr-md text-body-sm text-on-surface outline-none placeholder:text-on-surface-variant/50 disabled:opacity-50"
-            />
-          </div>
-
-          <div className="flex gap-xs rounded-xl bg-surface-container p-1 md:w-72">
-            {FILTER_OPTIONS.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter(key)}
-                className={`flex-1 rounded-lg py-1.5 font-mono text-label-mono uppercase transition-colors ${
-                  filter === key
-                    ? "bg-primary-container text-on-primary"
-                    : "text-on-surface-variant hover:text-on-surface"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="flex flex-col gap-sm sm:flex-row sm:items-center">
+        <Input
+          icon="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          disabled={!processes || processes.length === 0}
+          placeholder="Filter by name or PID…"
+          className="flex-1"
+        />
+        <Segmented
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "apps", label: "Apps" },
+            { value: "background", label: "Bg" },
+          ]}
+          className="sm:w-60"
+        />
       </div>
 
       {!isConnected ? (
-        <div className="surface-card py-16 text-center text-body-sm text-on-surface-variant">
-          Device is offline. Process list is unavailable until the agent reconnects.
-        </div>
+        <StateBlock icon="terminal" title="Device offline">
+          The process list is unavailable until the agent reconnects.
+        </StateBlock>
       ) : isFetching && !processes ? (
         <div className="flex flex-col gap-xs">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-14 animate-pulse rounded-lg bg-surface-container-low" />
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="h-12 animate-pulse rounded-lg bg-surface-container-low" />
           ))}
         </div>
       ) : isError ? (
-        <div className="surface-card flex flex-col items-center gap-sm py-16 text-center">
-          <Icon name="terminal" size={32} className="text-error" />
-          <p className="text-body-sm text-error">{extractErrorMessage(error)}</p>
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="mt-xs rounded-lg bg-surface-container px-4 py-2 font-mono text-label-mono uppercase text-on-surface transition-colors hover:bg-surface-container-high"
-          >
+        <StateBlock icon="error_outline" title="Could not load processes">
+          <p className="text-error">{extractErrorMessage(error)}</p>
+          <Button variant="secondary" className="mt-sm" onClick={() => void refetch()}>
             Retry
-          </button>
-        </div>
+          </Button>
+        </StateBlock>
       ) : filteredProcesses.length > 0 ? (
-        <div className="surface-card overflow-x-auto p-0">
-          <table className="w-full min-w-[480px] text-left">
-            <thead>
-              <tr className="border-b border-outline-variant text-on-surface-variant">
-                <th className="px-md py-sm font-mono text-label-mono uppercase">Name</th>
-                <th className="px-md py-sm font-mono text-label-mono uppercase">PID</th>
-                <th className="px-md py-sm text-right font-mono text-label-mono uppercase">CPU</th>
-                <th className="px-md py-sm text-right font-mono text-label-mono uppercase">Memory</th>
-                <th className="px-md py-sm text-right font-mono text-label-mono uppercase">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProcesses.map((process) => (
-                <tr key={process.pid} className="border-b border-outline-variant/50 last:border-0">
-                  <td className="px-md py-sm text-body-sm text-on-surface">{process.name}</td>
-                  <td className="px-md py-sm font-mono text-body-sm text-on-surface-variant">{process.pid}</td>
-                  <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
-                    {process.cpuPercent.toFixed(1)}%
-                  </td>
-                  <td className="px-md py-sm text-right font-mono text-body-sm text-on-surface-variant">
-                    {formatMemory(process.memoryBytes)}
-                  </td>
-                  <td className="px-md py-sm text-right">
-                    <button
-                      type="button"
-                      onClick={() => requestKill(process.pid, process.name)}
-                      aria-label={`End task ${process.name}`}
-                      title="End task"
-                      className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-                    >
-                      <Icon name="close" size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card className="flex flex-col divide-y divide-outline-variant/60">
+          {filteredProcesses.map((process) => (
+            <div key={process.pid} className="flex items-center gap-sm px-sm py-2.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-body-sm text-on-surface">{process.name}</span>
+                <span className="font-mono text-[10px] uppercase text-on-surface-variant">PID {process.pid}</span>
+              </div>
+              <div className="flex w-16 shrink-0 flex-col items-end gap-0.5">
+                <span className="font-mono text-label-mono text-on-surface">{process.cpuPercent.toFixed(1)}%</span>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-surface-container-highest">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, process.cpuPercent)}%` }} />
+                </div>
+              </div>
+              <span className="w-16 shrink-0 text-right font-mono text-label-mono text-on-surface-variant">
+                {formatMemory(process.memoryBytes)}
+              </span>
+              <button
+                type="button"
+                onClick={() => requestKill(process.pid, process.name)}
+                aria-label={`End task ${process.name}`}
+                title="End task"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+          ))}
+        </Card>
       ) : (
-        <div className="surface-card py-16 text-center text-body-sm text-on-surface-variant">
-          {processes ? "No processes match your filter." : "No process data yet."}
-        </div>
+        <StateBlock icon="terminal" title={processes ? "No processes match your filter" : "No process data yet"} />
       )}
 
       <ConfirmDialog
         open={pending !== null}
         title={pending ? `End "${pending.name}"?` : ""}
-        description={
-          pending
-            ? `This will immediately terminate PID ${pending.pid}. Any unsaved work in this process will be lost.`
-            : ""
-        }
+        description={pending ? `This will immediately terminate PID ${pending.pid}. Any unsaved work in this process will be lost.` : ""}
         confirmLabel="End Task"
         icon="close"
         danger

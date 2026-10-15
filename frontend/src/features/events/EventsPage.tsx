@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { eventDisplayMap } from "@/lib/eventDisplay";
-import type { EventType } from "@/types/event";
-import { EventRow } from "./EventRow";
+import { Button, Card, Input, PageHeader, StateBlock, StatusPill } from "@/components/ui/kit";
+import { eventDisplayMap, formatClockTime, toneClasses } from "@/lib/eventDisplay";
+import type { EventType, SentinelEvent } from "@/types/event";
 import { useEvents } from "./useEvents";
 
-/// "Today" / "Yesterday" / "Mon, Oct 13" for a timeline date header.
+/// "Today" / "Yesterday" / "Wed, Oct 15" for a timeline date header.
 function dayLabel(d: Date): string {
   const today = new Date();
   const yesterday = new Date();
@@ -13,6 +13,33 @@ function dayLabel(d: Date): string {
   if (d.toDateString() === today.toDateString()) return "Today";
   if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+/// One event on the timeline rail: a coloured node on a vertical line, then
+/// the event code, label, device, and time.
+function TimelineItem({ event }: { event: SentinelEvent }) {
+  const meta = eventDisplayMap[event.type];
+  const tone = toneClasses(meta.tone);
+  return (
+    <div className="relative flex gap-md pb-sm pl-1">
+      {/* rail + node */}
+      <div className="relative flex flex-col items-center">
+        <span className={`z-10 flex h-8 w-8 items-center justify-center rounded-full border border-outline-variant ${tone.bg} ${tone.text}`}>
+          <Icon name={meta.icon} size={16} filled={meta.filled} />
+        </span>
+        <span className="absolute top-8 h-[calc(100%-1rem)] w-px bg-outline-variant" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 pb-md">
+        <div className="flex items-center justify-between gap-sm">
+          <span className={`font-mono text-[10px] uppercase tracking-wider ${tone.text}`}>{meta.code}</span>
+          <span className="whitespace-nowrap font-mono text-[10px] text-on-surface-variant">{formatClockTime(event.occurredAt)}</span>
+        </div>
+        <span className="truncate text-body-sm text-on-surface">
+          {meta.label} <span className="text-on-surface-variant">· {event.device.name}</span>
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function EventsPage() {
@@ -27,27 +54,17 @@ export function EventsPage() {
     if (!search.trim()) return data.items;
     const term = search.toLowerCase();
     return data.items.filter(
-      (event) =>
-        eventDisplayMap[event.type].label.toLowerCase().includes(term) ||
-        event.device.name.toLowerCase().includes(term),
+      (e) => eventDisplayMap[e.type].label.toLowerCase().includes(term) || e.device.name.toLowerCase().includes(term),
     );
   }, [data, search]);
 
-  const criticalCount = useMemo(
-    () => (data ? data.items.filter((e) => eventDisplayMap[e.type].tone === "error").length : 0),
-    [data],
-  );
-
-  // Group the visible events by calendar day for a timeline with date
-  // headers, preserving the server's newest-first order.
   const groupedByDay = useMemo(() => {
-    const groups: { day: string; label: string; items: typeof filteredItems }[] = [];
+    const groups: { day: string; label: string; items: SentinelEvent[] }[] = [];
     for (const event of filteredItems) {
-      const d = new Date(event.occurredAt);
-      const day = d.toDateString();
+      const day = new Date(event.occurredAt).toDateString();
       let group = groups.find((g) => g.day === day);
       if (!group) {
-        group = { day, label: dayLabel(d), items: [] };
+        group = { day, label: dayLabel(new Date(event.occurredAt)), items: [] };
         groups.push(group);
       }
       group.items.push(event);
@@ -56,39 +73,24 @@ export function EventsPage() {
   }, [filteredItems]);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-sm">
-        <div className="surface-card flex flex-col gap-xs p-md">
-          <span className="font-mono text-label-mono uppercase text-on-surface-variant">Total events</span>
-          <span className="text-headline-lg-mobile font-semibold text-primary">{data?.pagination.total ?? "—"}</span>
-        </div>
-        <div className="surface-card flex flex-col gap-xs p-md">
-          <span className="font-mono text-label-mono uppercase text-on-surface-variant">Critical (page)</span>
-          <span className="text-headline-lg-mobile font-semibold text-error">{criticalCount}</span>
-        </div>
-      </div>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-md">
+      <PageHeader
+        title="Activity"
+        subtitle={data ? `${data.pagination.total} events recorded` : "System event timeline"}
+        icon="history"
+        trailing={<StatusPill tone="success" pulse label="Live" />}
+      />
 
-      {/* Search & filters */}
-      <div className="surface-card flex flex-col gap-sm p-sm">
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">
-            <Icon name="search" size={20} />
-          </span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search event details..."
-            className="w-full rounded-lg bg-surface-container-highest py-3 pl-10 pr-4 text-body-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+      {/* Filters */}
+      <div className="flex flex-col gap-sm sm:flex-row">
+        <Input icon="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events…" className="flex-1" />
         <select
           value={type}
           onChange={(e) => {
             setType(e.target.value as EventType | "");
             setPage(1);
           }}
-          className="rounded-lg bg-surface-container-highest px-3 py-2 font-mono text-label-mono text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 font-mono text-label-mono uppercase text-on-surface outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
         >
           <option value="">All types</option>
           {Object.entries(eventDisplayMap).map(([key, meta]) => (
@@ -99,67 +101,53 @@ export function EventsPage() {
         </select>
       </div>
 
-      {/* Event list */}
-      <div className="flex flex-col gap-xs">
-        <div className="flex items-center justify-between px-xs">
-          <span className="font-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
-            Live Activity Log
-          </span>
-          <span className="h-2 w-2 animate-pulse rounded-full bg-success" />
+      {/* Timeline */}
+      {isLoading ? (
+        <div className="flex flex-col gap-xs">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-16 animate-pulse rounded-lg bg-surface-container-low" />
+          ))}
         </div>
-
-        {isLoading ? (
-          <div className="flex flex-col gap-xs">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-16 animate-pulse rounded-lg bg-surface-container-low" />
-            ))}
-          </div>
-        ) : groupedByDay.length > 0 ? (
-          <div className="flex flex-col gap-md">
-            {groupedByDay.map((group) => (
-              <div key={group.day} className="flex flex-col gap-xs">
-                <div className="sticky top-0 z-10 flex items-center gap-sm bg-surface/80 py-1 backdrop-blur-sm">
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">{group.label}</span>
-                  <span className="h-px flex-1 bg-outline-variant" />
-                  <span className="font-mono text-[10px] text-on-surface-variant">{group.items.length}</span>
-                </div>
-                {group.items.map((event) => (
-                  <EventRow key={event.id} event={event} />
-                ))}
+      ) : groupedByDay.length > 0 ? (
+        <div className="flex flex-col gap-md">
+          {groupedByDay.map((group) => (
+            <div key={group.day} className="flex flex-col">
+              <div className="mb-sm flex items-center gap-sm">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">{group.label}</span>
+                <span className="h-px flex-1 bg-outline-variant" />
+                <span className="font-mono text-[10px] text-on-surface-variant">{group.items.length}</span>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="surface-card py-10 text-center text-body-sm text-on-surface-variant">
-            No events match your filters.
-          </div>
-        )}
-      </div>
+              <Card className="p-md">
+                {group.items.map((event) => (
+                  <TimelineItem key={event.id} event={event} />
+                ))}
+              </Card>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <StateBlock icon="history" title="No events match your filters">
+          Try a different type or clear the search.
+        </StateBlock>
+      )}
 
       {/* Pagination */}
       {data && data.pagination.totalPages > 1 && (
-        <div className="surface-card flex items-center justify-between p-sm">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            aria-label="Previous page"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-highest disabled:opacity-30"
-          >
-            <Icon name="chevron_left" size={20} />
-          </button>
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" icon="chevron_left" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            Prev
+          </Button>
           <span className="font-mono text-label-mono text-on-surface-variant">
-            Page {data.pagination.page} of {data.pagination.totalPages}
+            {data.pagination.page} / {data.pagination.totalPages}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             disabled={isPlaceholderData || page >= data.pagination.totalPages}
             onClick={() => setPage((p) => p + 1)}
-            aria-label="Next page"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-highest disabled:opacity-30"
           >
-            <Icon name="chevron_right" size={20} />
-          </button>
+            Next
+            <Icon name="chevron_right" size={16} />
+          </Button>
         </div>
       )}
     </div>
