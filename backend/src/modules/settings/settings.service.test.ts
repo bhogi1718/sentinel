@@ -23,6 +23,8 @@ import { ApiError } from "../../common/ApiError";
 const mockedRepo = vi.mocked(settingsRepository, true);
 const mockedTelegram = vi.mocked(telegramService, true);
 
+const ORG_ID = "org-1";
+
 describe("settingsService.getIntegrationStatus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -31,14 +33,15 @@ describe("settingsService.getIntegrationStatus", () => {
   it("reports connected when Telegram is configured", async () => {
     mockedTelegram.isConfigured.mockResolvedValue(true);
 
-    const status = await settingsService.getIntegrationStatus();
+    const status = await settingsService.getIntegrationStatus(ORG_ID);
     expect(status).toEqual({ telegram: { connected: true } });
+    expect(mockedTelegram.isConfigured).toHaveBeenCalledWith(ORG_ID);
   });
 
   it("reports not connected when Telegram is unconfigured", async () => {
     mockedTelegram.isConfigured.mockResolvedValue(false);
 
-    const status = await settingsService.getIntegrationStatus();
+    const status = await settingsService.getIntegrationStatus(ORG_ID);
     expect(status).toEqual({ telegram: { connected: false } });
   });
 });
@@ -52,23 +55,23 @@ describe("settingsService.connectTelegram", () => {
     mockedTelegram.sendTestMessage.mockResolvedValue({ ok: true });
     mockedRepo.setTelegramConfig.mockResolvedValue({} as never);
 
-    await settingsService.connectTelegram("bot-token", "chat-id");
+    await settingsService.connectTelegram(ORG_ID, "bot-token", "chat-id");
 
     expect(mockedTelegram.sendTestMessage).toHaveBeenCalledWith("bot-token", "chat-id");
-    expect(mockedRepo.setTelegramConfig).toHaveBeenCalledWith("bot-token", "chat-id");
+    expect(mockedRepo.setTelegramConfig).toHaveBeenCalledWith(ORG_ID, "bot-token", "chat-id");
   });
 
   it("rejects and does not persist anything when the test message fails", async () => {
     mockedTelegram.sendTestMessage.mockResolvedValue({ ok: false, error: "chat not found" });
 
-    await expect(settingsService.connectTelegram("bot-token", "wrong-chat-id")).rejects.toThrow(ApiError);
+    await expect(settingsService.connectTelegram(ORG_ID, "bot-token", "wrong-chat-id")).rejects.toThrow(ApiError);
     expect(mockedRepo.setTelegramConfig).not.toHaveBeenCalled();
   });
 
   it("surfaces the Telegram API's own error message", async () => {
     mockedTelegram.sendTestMessage.mockResolvedValue({ ok: false, error: "chat not found" });
 
-    await expect(settingsService.connectTelegram("bot-token", "wrong-chat-id")).rejects.toThrow("chat not found");
+    await expect(settingsService.connectTelegram(ORG_ID, "bot-token", "wrong-chat-id")).rejects.toThrow("chat not found");
   });
 });
 
@@ -80,8 +83,8 @@ describe("settingsService.disconnectTelegram", () => {
   it("clears the stored config", async () => {
     mockedRepo.clearTelegramConfig.mockResolvedValue(undefined);
 
-    await settingsService.disconnectTelegram();
+    await settingsService.disconnectTelegram(ORG_ID);
 
-    expect(mockedRepo.clearTelegramConfig).toHaveBeenCalledOnce();
+    expect(mockedRepo.clearTelegramConfig).toHaveBeenCalledExactlyOnceWith(ORG_ID);
   });
 });

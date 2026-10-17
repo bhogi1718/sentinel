@@ -1,11 +1,14 @@
 import { NavLink } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { moreNavItems, primaryNavItems, type NavItem } from "./navItems";
+import { useCurrentOrg } from "@/features/org/useOrg";
+import { navItemsFor, type NavItem } from "./navItems";
+import { OrgSwitcher } from "./OrgSwitcher";
 
-function NavRow({ to, label, icon }: NavItem) {
+function NavRow({ to, label, icon, end }: NavItem) {
   return (
     <NavLink
       to={to}
+      end={end}
       className={({ isActive }) =>
         `flex items-center gap-sm rounded-lg px-sm py-2.5 text-body-sm font-medium transition-colors ${
           isActive ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-white/5 hover:text-on-surface"
@@ -19,24 +22,23 @@ function NavRow({ to, label, icon }: NavItem) {
 }
 
 export function Sidebar() {
+  const { org } = useCurrentOrg();
+
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low/60 px-sm py-lg md:flex">
-      <div className="mb-xl flex items-center gap-sm px-sm">
+      <div className="mb-lg flex items-center gap-sm px-sm">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary">
           <Icon name="security" size={18} />
         </div>
         <span className="text-body-sm font-semibold tracking-tight text-on-surface">Sentinel</span>
       </div>
 
-      <nav className="flex flex-col gap-xs">
-        {primaryNavItems.map((item) => (
-          <NavRow key={item.to} {...item} />
-        ))}
+      <div className="mb-lg">
+        <OrgSwitcher />
+      </div>
 
-        <span className="mt-md mb-xs px-sm font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
-          More
-        </span>
-        {moreNavItems.map((item) => (
+      <nav className="flex flex-col gap-xs">
+        {navItemsFor(org.id).map((item) => (
           <NavRow key={item.to} {...item} />
         ))}
       </nav>

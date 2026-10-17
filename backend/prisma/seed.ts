@@ -5,7 +5,11 @@ import { prisma } from "../src/prisma/client";
 
 const SALT_ROUNDS = 12;
 
-async function seedAdminUser(): Promise<void> {
+// The same organization the multi-tenant migration creates for existing
+// data, so a freshly seeded database and a migrated one look identical.
+const DEFAULT_ORG = { name: "Personal", slug: "personal" } as const;
+
+async function seedAdminUser(): Promise<string> {
   if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) {
     throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env to run the seed script");
   }
@@ -13,7 +17,7 @@ async function seedAdminUser(): Promise<void> {
   const existing = await prisma.user.findUnique({ where: { email: env.ADMIN_EMAIL } });
   if (existing) {
     console.log(`Admin user already exists for ${env.ADMIN_EMAIL}, skipping.`);
-    return;
+    return existing.id;
   }
 
   const passwordHash = await bcrypt.hash(env.ADMIN_PASSWORD, SALT_ROUNDS);
@@ -22,22 +26,40 @@ async function seedAdminUser(): Promise<void> {
   });
 
   console.log(`Created admin user: ${user.email} (${user.id})`);
+  return user.id;
 }
 
-async function seedDevice(): Promise<void> {
+async function seedOrganization(ownerId: string): Promise<string> {
+  const org = await prisma.organization.upsert({
+    where: { slug: DEFAULT_ORG.slug },
+    create: DEFAULT_ORG,
+    update: {},
+  });
+
+  await prisma.membership.upsert({
+    where: { userId_orgId: { userId: ownerId, orgId: org.id } },
+    create: { userId: ownerId, orgId: org.id, role: "OWNER" },
+    update: { role: "OWNER" },
+  });
+
+  console.log(`Organization "${org.name}" (${org.id}) is owned by the admin user.`);
+  return org.id;
+}
+
+async function seedDevice(orgId: string): Promise<void> {
   if (!env.DEVICE_NAME) {
     throw new Error("DEVICE_NAME must be set in .env to run the seed script");
   }
 
-  const existingCount = await prisma.device.count();
+  const existingCount = await prisma.device.count({ where: { orgId } });
   if (existingCount > 0) {
-    console.log("A device already exists, skipping device seed.");
+    console.log("The organization already has a device, skipping device seed.");
     return;
   }
 
   const token = deviceService.generateToken();
   const device = await prisma.device.create({
-    data: { name: env.DEVICE_NAME, tokenHash: deviceService.hashToken(token) },
+    data: { orgId, name: env.DEVICE_NAME, tokenHash: deviceService.hashToken(token) },
   });
 
   console.log(`Created device: ${device.name} (${device.id})`);
@@ -48,8 +70,9 @@ async function seedDevice(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  await seedAdminUser();
-  await seedDevice();
+  const ownerId = await seedAdminUser();
+  const orgId = await seedOrganization(ownerId);
+  await seedDevice(orgId);
 }
 
 main()

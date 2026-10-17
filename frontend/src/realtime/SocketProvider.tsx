@@ -3,15 +3,20 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { io } from "socket.io-client";
 import type { Socket } from "socket.io-client";
+import { authApi } from "@/api/auth.api";
 import { getAccessToken } from "@/api/client";
 import type { Command } from "@/api/command.api";
-import type { DeviceStatus } from "@/api/device.api";
+import type { Device } from "@/api/device.api";
+import { queryKeys } from "@/api/queryKeys";
 import { useAuth } from "@/features/auth/useAuth";
 import { SOCKET_BASE_URL } from "@/lib/apiConfig";
-import { DEVICE_STATUS_QUERY_KEY } from "@/features/device/useDeviceStatus";
-import type { PaginatedEvents, SentinelEvent } from "@/types/event";
+import type { SentinelEvent } from "@/types/event";
 import { SocketContext } from "./SocketContext";
 
+/// One dashboard socket per signed-in tab. The server puts it in a room for
+/// each organization the user belongs to, so it only ever receives that
+/// user's organizations' updates; the handlers below patch exactly the
+/// cache entries each update belongs to.
 export function SocketProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
@@ -34,35 +39,64 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       transports: ["websocket"],
     });
 
-    dashboardSocket.on("connect", () => setIsConnected(true));
-    dashboardSocket.on("disconnect", () => setIsConnected(false));
+    // The server closes the socket when the access token it was opened with
+    // expires (and refuses a reconnect with an expired one). Neither case is
+    // retried automatically by socket.io, so: make one authenticated request
+    // - the axios layer refreshes the access token on its 401 - then
+    // reconnect, which picks up the fresh token. If the session itself was
+    // revoked, that request signs the user out instead and this provider
+    // unmounts the socket. Bounded so a persistent failure can't spin.
+    let active = true;
+    let reauthAttempts = 0;
+    const MAX_REAUTH_ATTEMPTS = 3;
+    const reauthenticateAndReconnect = async () => {
+      if (reauthAttempts >= MAX_REAUTH_ATTEMPTS) return;
+      reauthAttempts++;
+      try {
+        await authApi.me();
+      } catch {
+        return;
+      }
+      if (active) dashboardSocket.connect();
+    };
 
+    dashboardSocket.on("connect", () => {
+      reauthAttempts = 0;
+      setIsConnected(true);
+    });
+    dashboardSocket.on("disconnect", (reason) => {
+      setIsConnected(false);
+      if (reason === "io server disconnect") void reauthenticateAndReconnect();
+    });
+    dashboardSocket.on("connect_error", (err) => {
+      if (err.message === "Invalid or expired access token") void reauthenticateAndReconnect();
+    });
+
+    // Every event list of the event's organization (any page, any filter)
+    // may now be out of date.
     dashboardSocket.on("event:new", (event: SentinelEvent) => {
-      queryClient.setQueryData<PaginatedEvents>(["events", { page: 1 }], (current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          items: [event, ...current.items].slice(0, current.pagination.pageSize),
-          pagination: { ...current.pagination, total: current.pagination.total + 1 },
-        };
-      });
-      void queryClient.invalidateQueries({ queryKey: ["events"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events(event.orgId) });
     });
 
     dashboardSocket.on("device:status", (payload: { deviceId: string; online: boolean }) => {
-      queryClient.setQueryData<DeviceStatus>(DEVICE_STATUS_QUERY_KEY, (current) => {
-        if (!current || current.id !== payload.deviceId) return current;
-        return { ...current, isOnline: payload.online };
-      });
+      const patch = (device: Device): Device =>
+        device.id === payload.deviceId
+          ? { ...device, isOnline: payload.online, lastSeenAt: new Date().toISOString() }
+          : device;
+
+      queryClient.setQueryData<Device>(queryKeys.device(payload.deviceId), (current) => (current ? patch(current) : current));
+      queryClient.setQueriesData<Device[]>({ queryKey: ["devices"] }, (list) => list?.map(patch));
     });
 
     dashboardSocket.on("command:update", (command: Command) => {
-      queryClient.setQueryData<Command>(["command", command.id], command);
+      queryClient.setQueryData<Command>(queryKeys.command(command.id), command);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.commands(command.deviceId) });
     });
 
     setSocket(dashboardSocket);
 
     return () => {
+      active = false;
       dashboardSocket.disconnect();
       setSocket(null);
       setIsConnected(false);

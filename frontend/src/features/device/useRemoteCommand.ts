@@ -1,15 +1,16 @@
 import { useState } from "react";
 import type { WholeMachineCommandType } from "./remoteCommands";
 import { extractErrorMessage } from "@/api/client";
+import type { DeviceRef } from "@/api/paths";
 import { useSendCommand } from "./useSendCommand";
 
 /// Drives a single confirm-then-send remote command flow: tracks which
 /// command is pending confirmation, fires the mutation on confirm, and
 /// surfaces the error inline so the dialog can stay open on failure
 /// instead of silently closing.
-export function useRemoteCommand() {
+export function useRemoteCommand(ref: DeviceRef) {
   const [pendingType, setPendingType] = useState<WholeMachineCommandType | null>(null);
-  const mutation = useSendCommand();
+  const mutation = useSendCommand(ref);
 
   function requestCommand(type: WholeMachineCommandType): void {
     mutation.reset();

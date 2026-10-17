@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { logger } from "../../config/logger";
-import { deviceRepository } from "../device/device.repository";
+import { connectedAgentFor } from "../device/agentConnection";
+import { OrgDevice } from "../device/device.types";
 import { broadcastStreamFrame, broadcastStreamState, findAgentSocket } from "../../realtime/socket";
 import { AnnotationUpdate } from "./stream.validation";
 
@@ -18,124 +19,134 @@ const STREAM_INTERVAL_MS = 500;
 const SESSION_ID_PREFIX_LENGTH = 36;
 
 interface StreamState {
+  /// The device's organization - where this session's state is announced.
+  orgId: string;
   sessionId: string;
   viewers: Set<string>;
 }
 
-// At most one live-view session exists at a time (single-owner, one
-// laptop). Multiple dashboard tabs can watch the same session - they all
-// receive the same broadcast frames, and the agent only streams once.
-let state: StreamState | null = null;
+// At most one live-view session per device. Several dashboard tabs (of any
+// authorized members) can watch the same device's session - they all join
+// that device's stream room and the agent only streams once. Sessions of
+// different devices are fully independent.
+const sessions = new Map<string, StreamState>();
 
 export const streamService = {
-  /// A dashboard viewer asks to start/join the live view. Starts the agent
-  /// stream if this is the first viewer; otherwise just joins the existing
-  /// one. Throws if no device is registered/online/connected.
-  async startViewing(viewerSocketId: string): Promise<void> {
-    if (state) {
-      state.viewers.add(viewerSocketId);
+  /// An authorized viewer asks to start or join a device's live view.
+  /// Starts the agent stream if this is the device's first viewer;
+  /// otherwise just joins the existing session. Throws if the device's
+  /// agent isn't connected.
+  async startViewing(device: OrgDevice, viewerSocketId: string): Promise<void> {
+    const existing = sessions.get(device.id);
+    if (existing) {
+      existing.viewers.add(viewerSocketId);
       return;
     }
 
-    // Reserve the session slot synchronously, before the awaits below, so two
-    // near-simultaneous stream:start calls can't both pass the `state === null`
-    // check across an await and start two competing sessions. Any second
-    // caller now sees this reserved state and just joins it. If the async
-    // lookups fail, the reservation is rolled back (only if still ours) so a
-    // failed start doesn't leave the stream wedged "active" forever.
+    // Reserve the session slot synchronously, before the await below, so two
+    // near-simultaneous stream:start calls for the same device can't both see
+    // no session and start two competing ones. A second caller now finds this
+    // reservation and just joins it. If reaching the agent fails, the
+    // reservation is rolled back (only if still ours) so a failed start
+    // doesn't leave the device's stream wedged "active" forever.
     const sessionId = randomUUID();
-    state = { sessionId, viewers: new Set([viewerSocketId]) };
+    sessions.set(device.id, { orgId: device.orgId, sessionId, viewers: new Set([viewerSocketId]) });
 
     try {
-      const device = await deviceRepository.findFirst();
-      if (!device) {
-        throw new Error("No device has been registered yet");
-      }
-      if (!device.isOnline) {
-        throw new Error("Device is offline - cannot start a live view");
-      }
-
-      const agentSocket = await findAgentSocket(device.id);
-      if (!agentSocket) {
-        throw new Error("Device is not currently connected");
-      }
-
+      const agentSocket = await connectedAgentFor(device, "start a live view");
       agentSocket.emit("stream:start", {
         sessionId,
         maxWidth: STREAM_MAX_WIDTH,
         quality: STREAM_QUALITY,
         intervalMs: STREAM_INTERVAL_MS,
       });
-      broadcastStreamState(true, sessionId);
-      logger.info(`Live view started (session ${sessionId}) by viewer ${viewerSocketId}`);
+      broadcastStreamState(device.orgId, device.id, true, sessionId);
+      logger.info(`Live view started for device ${device.id} (session ${sessionId}) by viewer ${viewerSocketId}`);
     } catch (err) {
-      if (state?.sessionId === sessionId) {
-        state = null;
+      if (sessions.get(device.id)?.sessionId === sessionId) {
+        sessions.delete(device.id);
       }
       throw err;
     }
   },
 
-  /// A viewer leaves the live view (explicit stop or disconnect). When the
-  /// last viewer leaves, the agent stream is stopped so the laptop isn't
-  /// capturing frames nobody is watching.
-  async stopViewing(viewerSocketId: string): Promise<void> {
-    if (!state) return;
-    state.viewers.delete(viewerSocketId);
-    if (state.viewers.size > 0) return;
-
-    const stoppedSessionId = state.sessionId;
-    state = null;
-    broadcastStreamState(false, null);
-
-    const device = await deviceRepository.findFirst();
-    if (device) {
-      const agentSocket = await findAgentSocket(device.id);
-      agentSocket?.emit("stream:stop", { sessionId: stoppedSessionId });
-    }
-    logger.info(`Live view stopped (session ${stoppedSessionId})`);
+  /// Whether this socket is currently a viewer of this device's live view -
+  /// the gate for per-session actions like annotations, which were already
+  /// authorized when the viewer joined.
+  isViewing(deviceId: string, viewerSocketId: string): boolean {
+    return sessions.get(deviceId)?.viewers.has(viewerSocketId) ?? false;
   },
 
-  /// Relays one binary frame from the agent to all dashboard viewers. The
-  /// 36-byte session-id prefix is stripped and validated; a frame whose
-  /// session is no longer the active one (a straggler after stop) is
-  /// dropped rather than shown.
-  handleAgentFrame(framed: Buffer): void {
-    if (!state) return;
+  /// Every live view this socket is currently watching, with the device's
+  /// organization - for re-checking that it is still allowed to.
+  viewedBy(viewerSocketId: string): { deviceId: string; orgId: string }[] {
+    return [...sessions.entries()]
+      .filter(([, session]) => session.viewers.has(viewerSocketId))
+      .map(([deviceId, session]) => ({ deviceId, orgId: session.orgId }));
+  },
+
+  /// A viewer leaves one device's live view. When its last viewer leaves,
+  /// that device's agent stream is stopped so the laptop isn't capturing
+  /// frames nobody is watching.
+  async stopViewing(deviceId: string, viewerSocketId: string): Promise<void> {
+    const session = sessions.get(deviceId);
+    if (!session || !session.viewers.delete(viewerSocketId)) return;
+    if (session.viewers.size > 0) return;
+
+    sessions.delete(deviceId);
+    broadcastStreamState(session.orgId, deviceId, false, null);
+
+    const agentSocket = await findAgentSocket(deviceId);
+    agentSocket?.emit("stream:stop", { sessionId: session.sessionId });
+    logger.info(`Live view stopped for device ${deviceId} (session ${session.sessionId})`);
+  },
+
+  /// A dashboard socket disconnected: remove it from every live view it was
+  /// watching.
+  async stopViewingEverywhere(viewerSocketId: string): Promise<void> {
+    const watched = [...sessions.entries()]
+      .filter(([, session]) => session.viewers.has(viewerSocketId))
+      .map(([deviceId]) => deviceId);
+    await Promise.all(watched.map((deviceId) => streamService.stopViewing(deviceId, viewerSocketId)));
+  },
+
+  /// Relays one binary frame from a device's agent to that device's viewers.
+  /// The 36-byte session-id prefix is stripped and validated; a frame whose
+  /// session is no longer the device's active one (a straggler after stop)
+  /// is dropped rather than shown.
+  handleAgentFrame(deviceId: string, framed: Buffer): void {
+    const session = sessions.get(deviceId);
+    if (!session) return;
     if (framed.length < SESSION_ID_PREFIX_LENGTH) {
-      logger.error("Received malformed stream:frame from agent (too short)");
+      logger.error(`Received malformed stream:frame from device ${deviceId} (too short)`);
       return;
     }
     const sessionId = framed.toString("utf8", 0, SESSION_ID_PREFIX_LENGTH);
-    if (sessionId !== state.sessionId) return;
+    if (sessionId !== session.sessionId) return;
 
-    const jpeg = framed.subarray(SESSION_ID_PREFIX_LENGTH);
-    broadcastStreamFrame(jpeg);
+    broadcastStreamFrame(deviceId, framed.subarray(SESSION_ID_PREFIX_LENGTH));
   },
 
-  /// Forwards (already-validated) annotation shapes to the agent's display-only
-  /// overlay. We only confirm there is a connected agent to send to.
-  async forwardAnnotation(update: AnnotationUpdate): Promise<void> {
-    const device = await deviceRepository.findFirst();
-    if (!device) return;
-    const agentSocket = await findAgentSocket(device.id);
-    agentSocket?.emit("annotation:update", update);
+  /// Forwards (already-validated) annotation shapes to the device agent's
+  /// display-only overlay.
+  async forwardAnnotation(deviceId: string, shapes: AnnotationUpdate["shapes"]): Promise<void> {
+    const agentSocket = await findAgentSocket(deviceId);
+    agentSocket?.emit("annotation:update", { shapes });
   },
 
-  async clearAnnotation(): Promise<void> {
-    const device = await deviceRepository.findFirst();
-    if (!device) return;
-    const agentSocket = await findAgentSocket(device.id);
+  async clearAnnotation(deviceId: string): Promise<void> {
+    const agentSocket = await findAgentSocket(deviceId);
     agentSocket?.emit("annotation:clear");
   },
 
-  /// Called when the agent socket drops - the stream is dead, reset state so
-  /// the next viewer request starts a fresh session.
-  handleAgentDisconnected(): void {
-    if (!state) return;
-    const sessionId = state.sessionId;
-    state = null;
-    broadcastStreamState(false, null);
-    logger.info(`Live view ended because the agent disconnected (session ${sessionId})`);
+  /// Called when a device's agent socket drops - its stream is dead, so its
+  /// session is reset and the next viewer request starts a fresh one. Other
+  /// devices' sessions are untouched.
+  handleAgentDisconnected(deviceId: string): void {
+    const session = sessions.get(deviceId);
+    if (!session) return;
+    sessions.delete(deviceId);
+    broadcastStreamState(session.orgId, deviceId, false, null);
+    logger.info(`Live view for device ${deviceId} ended because its agent disconnected (session ${session.sessionId})`);
   },
 };

@@ -2,17 +2,20 @@ import { useState } from "react";
 import { extractErrorMessage } from "@/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import type { IconName } from "@/components/ui/Icon";
 import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { ScreenshotViewer } from "@/components/ui/ScreenshotViewer";
 import { Card, SectionLabel, StatusPill } from "@/components/ui/kit";
-import type { IconName } from "@/components/ui/Icon";
+import { CommandHistory } from "@/features/device/CommandHistory";
 import { LiveScreenViewer } from "@/features/device/LiveScreenViewer";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
-import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import type { WholeMachineCommandType } from "@/features/device/remoteCommands";
 import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import { useScreenshot } from "@/features/device/useScreenshot";
+import { useCurrentDevice } from "@/features/devices/DeviceContext";
+import { useCan } from "@/features/org/useOrg";
 
 function ActionButton({
   icon,
@@ -56,13 +59,26 @@ function formatRate(bytesPerSec: number): string {
   return `${formatBytes(bytesPerSec)}/s`;
 }
 
+const POWER_COMMANDS: { type: WholeMachineCommandType; label: string }[] = [
+  { type: "RESTART", label: "Reboot" },
+  { type: "SHUTDOWN", label: "Shutdown" },
+  { type: "SLEEP", label: "Sleep" },
+  { type: "LOG_OFF", label: "Log off" },
+];
+
+/// The Overview tab of a device: live view, vitals, remote actions and the
+/// device's command history. Each section appears only for roles allowed
+/// to use it.
 export function DevicePage() {
-  const { data: device, isError: isDeviceError, error: deviceError, refetch: refetchDevice } = useDeviceStatus();
-  const isConnected = device?.isOnline ?? false;
-  const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(isConnected);
-  const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
+  const { ref, device } = useCurrentDevice();
+  const canViewScreen = useCan("screen:view");
+  const canSendCommands = useCan("commands:send");
+  const isConnected = device.isOnline;
+
+  const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(ref, isConnected);
+  const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand(ref);
   const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
-  const { imageUrl, capture, clear, isCapturing, isError: isScreenshotError, error: screenshotError } = useScreenshot();
+  const { imageUrl, capture, clear, isCapturing, isError: isScreenshotError, error: screenshotError } = useScreenshot(ref);
   const [viewerOpen, setViewerOpen] = useState(false);
 
   const memoryPercent = metrics ? (metrics.memoryUsedBytes / metrics.memoryTotalBytes) * 100 : null;
@@ -78,31 +94,21 @@ export function DevicePage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-gutter">
-      {isDeviceError && (
-        <InlineErrorBanner message={`Device status: ${extractErrorMessage(deviceError)}`} onRetry={() => void refetchDevice()} />
-      )}
+    <div className="flex flex-col gap-gutter">
       {isMetricsError && (
         <InlineErrorBanner message={`Metrics: ${extractErrorMessage(metricsError)}`} onRetry={() => void refetchMetrics()} />
       )}
 
-      {/* Device identity deck */}
-      <Card className="flex items-center gap-md p-md">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon name="laptop_mac" size={26} />
-        </div>
-        <div className="flex flex-col gap-xs">
-          <h1 className="text-headline-lg-mobile font-semibold leading-none text-on-surface">Sentinel Device</h1>
-          <StatusPill
-            tone={isConnected ? "success" : "default"}
-            pulse={isConnected}
-            label={isConnected ? "Agent connected" : "Awaiting agent"}
-          />
-        </div>
-      </Card>
-
-      {/* Live screen view (view-only) - the most-used feature, kept at top */}
-      <LiveScreenViewer isConnected={isConnected} />
+      {canViewScreen ? (
+        <LiveScreenViewer deviceRef={ref} isConnected={isConnected} />
+      ) : (
+        <Card className="flex items-center gap-md p-md">
+          <Icon name="visibility_off" size={22} className="text-on-surface-variant" />
+          <span className="text-body-sm text-on-surface-variant">
+            Live view and screenshots are available to admins of this organization.
+          </span>
+        </Card>
+      )}
 
       {/* Performance gauges */}
       <div className="grid grid-cols-1 gap-gutter md:grid-cols-2">
@@ -111,7 +117,7 @@ export function DevicePage() {
           <div className="flex items-end gap-lg">
             <RadialGauge percent={metrics ? Math.round(metrics.cpuPercent) : null} label={metrics ? "Live" : "Awaiting data"} colorClass="text-primary" />
             <div className="h-20 flex-1 text-center text-body-sm text-on-surface-variant">
-              {metrics ? "Live processor load from the laptop agent." : "History appears once the laptop agent starts reporting CPU stats."}
+              {metrics ? "Live processor load from the laptop agent." : isConnected ? "Waiting for the agent's first reading." : "Readings resume when the agent reconnects."}
             </div>
           </div>
         </Card>
@@ -127,7 +133,9 @@ export function DevicePage() {
             <div className="h-20 flex-1 text-center text-body-sm text-on-surface-variant">
               {metrics
                 ? `${formatBytes(metrics.memoryUsedBytes)} of ${formatBytes(metrics.memoryTotalBytes)} in use.`
-                : "History appears once the laptop agent starts reporting memory stats."}
+                : isConnected
+                  ? "Waiting for the agent's first reading."
+                  : "Readings resume when the agent reconnects."}
             </div>
           </div>
         </Card>
@@ -156,28 +164,46 @@ export function DevicePage() {
       </Card>
 
       {/* Remote actions, grouped */}
-      <div className="flex flex-col gap-md">
-        <div className="flex flex-col gap-sm">
-          <SectionLabel>Quick</SectionLabel>
-          <div className="grid grid-cols-2 gap-sm">
-            <ActionButton icon="screenshot" label="Screenshot" disabled={!isConnected || isCapturing} busy={isCapturing} onClick={handleCapture} />
-            <ActionButton icon={REMOTE_COMMANDS.LOCK.icon} label="Lock" disabled={!isConnected} onClick={() => requestCommand("LOCK")} />
+      {(canSendCommands || canViewScreen) && (
+        <div className="flex flex-col gap-md">
+          <div className="flex flex-col gap-sm">
+            <SectionLabel>Quick</SectionLabel>
+            <div className="grid grid-cols-2 gap-sm">
+              {canViewScreen && (
+                <ActionButton icon="screenshot" label="Screenshot" disabled={!isConnected || isCapturing} busy={isCapturing} onClick={handleCapture} />
+              )}
+              {canSendCommands && (
+                <ActionButton icon={REMOTE_COMMANDS.LOCK.icon} label="Lock" disabled={!isConnected} onClick={() => requestCommand("LOCK")} />
+              )}
+            </div>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-sm">
-          <SectionLabel>Power</SectionLabel>
-          <div className="grid grid-cols-2 gap-sm">
-            <ActionButton icon={REMOTE_COMMANDS.RESTART.icon} label="Reboot" danger disabled={!isConnected} onClick={() => requestCommand("RESTART")} />
-            <ActionButton icon={REMOTE_COMMANDS.SHUTDOWN.icon} label="Shutdown" danger disabled={!isConnected} onClick={() => requestCommand("SHUTDOWN")} />
-          </div>
+          {canSendCommands && (
+            <div className="flex flex-col gap-sm">
+              <SectionLabel>Power</SectionLabel>
+              <div className="grid grid-cols-2 gap-sm sm:grid-cols-4">
+                {POWER_COMMANDS.map(({ type, label }) => (
+                  <ActionButton
+                    key={type}
+                    icon={REMOTE_COMMANDS[type].icon}
+                    label={label}
+                    danger={REMOTE_COMMANDS[type].danger}
+                    disabled={!isConnected}
+                    onClick={() => requestCommand(type)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      <CommandHistory deviceRef={ref} />
 
       <ConfirmDialog
         open={pendingCommand !== null}
         title={pendingCommand?.confirmTitle ?? ""}
-        description={pendingCommand?.confirmDescription ?? ""}
+        description={pendingCommand ? `${device.name}: ${pendingCommand.confirmDescription}` : ""}
         confirmLabel={pendingCommand?.label ?? "Confirm"}
         icon={pendingCommand?.icon ?? "lock"}
         danger={pendingCommand?.danger}

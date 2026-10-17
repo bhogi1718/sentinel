@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DeviceRef } from "@/api/paths";
 import { useSocket } from "@/realtime/useSocket";
 
 interface StreamStartAck {
@@ -6,13 +7,13 @@ interface StreamStartAck {
   error?: string;
 }
 
-/// Drives the live screen view over the existing dashboard Socket.IO
-/// connection. start() asks the backend (which asks the agent) to begin
-/// streaming; each binary frame that arrives is turned into an object URL
+/// Drives one device's live screen view over the existing dashboard
+/// Socket.IO connection. start() asks the backend (which authorizes the
+/// request and asks that device's agent) to begin streaming; each binary frame that arrives is turned into an object URL
 /// for an <img>, with the previous one revoked so memory doesn't grow one
 /// blob per frame. Stops automatically on unmount so leaving the page tells
 /// the agent to stop capturing.
-export function useScreenStream() {
+export function useScreenStream({ orgId, deviceId }: DeviceRef) {
   const { socket, isConnected } = useSocket();
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -38,7 +39,7 @@ export function useScreenStream() {
     }
     setError(null);
     setIsStarting(true);
-    socket.emit("stream:start", {}, (ack: StreamStartAck) => {
+    socket.emit("stream:start", { orgId, deviceId }, (ack: StreamStartAck) => {
       setIsStarting(false);
       if (ack?.success) {
         setIsStreaming(true);
@@ -47,14 +48,14 @@ export function useScreenStream() {
         setIsStreaming(false);
       }
     });
-  }, [socket, isConnected]);
+  }, [socket, isConnected, orgId, deviceId]);
 
   const stop = useCallback(() => {
-    socket?.emit("stream:stop");
+    socket?.emit("stream:stop", { deviceId });
     setIsStreaming(false);
     revokeCurrent();
     setFrameUrl(null);
-  }, [socket, revokeCurrent]);
+  }, [socket, deviceId, revokeCurrent]);
 
   // Incoming frames + server-pushed stream state.
   useEffect(() => {
@@ -80,7 +81,11 @@ export function useScreenStream() {
       }
     };
 
-    const onState = (payload: { active: boolean }) => {
+    // stream:state is announced to the whole organization; only this
+    // device's state matters here. (Frames need no such check - the server
+    // only sends a socket the frames of the device it is viewing.)
+    const onState = (payload: { deviceId: string; active: boolean }) => {
+      if (payload.deviceId !== deviceId) return;
       if (!payload.active) {
         setIsStreaming(false);
         revokeCurrent();
@@ -94,7 +99,7 @@ export function useScreenStream() {
       socket.off("stream:frame", onFrame);
       socket.off("stream:state", onState);
     };
-  }, [socket, revokeCurrent]);
+  }, [socket, deviceId, revokeCurrent]);
 
   // Tick the "seconds since last frame" readout while streaming, so a
   // stalled feed is visible rather than looking frozen-but-live.
@@ -112,10 +117,10 @@ export function useScreenStream() {
   // frees the last frame's memory.
   useEffect(() => {
     return () => {
-      socket?.emit("stream:stop");
+      socket?.emit("stream:stop", { deviceId });
       revokeCurrent();
     };
-  }, [socket, revokeCurrent]);
+  }, [socket, deviceId, revokeCurrent]);
 
   // Reset stats when a stream ends.
   useEffect(() => {

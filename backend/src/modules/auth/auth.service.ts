@@ -160,6 +160,17 @@ export const authService = {
     await authRepository.revokeAllRefreshTokensForUser(userId);
   },
 
+  /// When an access token (already checked by verifyAccessToken) stops being
+  /// valid - so long-lived connections authenticated by it can be closed at
+  /// that moment instead of outliving it.
+  accessTokenExpiresAt(token: string): Date | null {
+    const decoded = jwt.decode(token);
+    if (decoded && typeof decoded === "object" && typeof decoded.exp === "number") {
+      return new Date(decoded.exp * 1000);
+    }
+    return null;
+  },
+
   verifyAccessToken(token: string): AuthenticatedUser {
     let decoded: unknown;
     try {

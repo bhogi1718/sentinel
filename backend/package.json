@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "db:sandbox": "tsx scripts/sandbox-db.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -39,16 +40,21 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite-socket": "^0.2.13",
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^20.16.10",
+    "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9.12.0",
     "prisma": "^5.20.0",
+    "socket.io-client": "4.8",
+    "supertest": "^7.3.1",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "vitest": "^4.1.10"

@@ -1,15 +1,15 @@
 import { randomUUID } from "crypto";
 import { ApiError } from "../../common/ApiError";
-import { deviceRepository } from "../device/device.repository";
-import { findAgentSocket } from "../../realtime/socket";
+import { connectedAgentFor } from "../device/agentConnection";
+import { OrgDevice } from "../device/device.types";
+import { DeviceBoundRequest, settlePending } from "../../realtime/pendingRequests";
 import { ProcessInfo } from "./process.types";
 
 const PROCESS_LIST_TIMEOUT_MS = 15_000;
 
-interface PendingRequest {
+interface PendingRequest extends DeviceBoundRequest {
   resolve: (processes: ProcessInfo[]) => void;
   reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
 }
 
 // Same plain-event-plus-reply pattern as commands: the agent's Socket.IO
@@ -19,19 +19,8 @@ interface PendingRequest {
 const pendingRequests = new Map<string, PendingRequest>();
 
 export const processService = {
-  async listProcesses(): Promise<ProcessInfo[]> {
-    const device = await deviceRepository.findFirst();
-    if (!device) {
-      throw ApiError.notFound("No device has been registered yet");
-    }
-    if (!device.isOnline) {
-      throw ApiError.conflict("Device is offline - cannot list processes");
-    }
-
-    const agentSocket = await findAgentSocket(device.id);
-    if (!agentSocket) {
-      throw ApiError.conflict("Device is not currently connected");
-    }
+  async listProcesses(device: OrgDevice): Promise<ProcessInfo[]> {
+    const agentSocket = await connectedAgentFor(device, "list processes");
 
     const requestId = randomUUID();
 
@@ -41,20 +30,14 @@ export const processService = {
         reject(ApiError.conflict("No response from agent"));
       }, PROCESS_LIST_TIMEOUT_MS);
 
-      pendingRequests.set(requestId, { resolve, reject, timeout });
+      pendingRequests.set(requestId, { deviceId: device.id, resolve, reject, timeout });
       agentSocket.emit("process:list:request", { requestId });
     });
   },
 
   /// Called from the /agent namespace's "process:list:response" listener
-  /// when the agent replies with a requested process snapshot.
-  resolveResponse(requestId: string, processes: ProcessInfo[]): void {
-    const pending = pendingRequests.get(requestId);
-    if (!pending) {
-      return;
-    }
-    clearTimeout(pending.timeout);
-    pendingRequests.delete(requestId);
-    pending.resolve(processes);
+  /// when a device's agent replies with a requested process snapshot.
+  resolveResponse(fromDeviceId: string, requestId: string, processes: ProcessInfo[]): void {
+    settlePending(pendingRequests, requestId, fromDeviceId)?.resolve(processes);
   },
 };

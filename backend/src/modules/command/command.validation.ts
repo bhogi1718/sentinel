@@ -26,6 +26,13 @@ export const createCommandSchema = z.object({
   ]),
 });
 
+export const listCommandsSchema = z.object({
+  query: z.object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+  }),
+});
+
 export const commandAckSchema = z.object({
   commandId: z.string().uuid(),
   success: z.boolean(),
@@ -33,4 +40,5 @@ export const commandAckSchema = z.object({
 });
 
 export type CreateCommandInput = z.infer<typeof createCommandSchema>["body"];
+export type ListCommandsQuery = z.infer<typeof listCommandsSchema>["query"];
 export type CommandAckInput = z.infer<typeof commandAckSchema>;

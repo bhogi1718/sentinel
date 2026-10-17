@@ -3,7 +3,8 @@ import { extractErrorMessage } from "@/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input, PageHeader, Segmented, StateBlock } from "@/components/ui/kit";
-import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useCurrentDevice } from "@/features/devices/DeviceContext";
+import { useCan } from "@/features/org/useOrg";
 import { useKillProcess } from "./useKillProcess";
 import { useProcesses } from "./useProcesses";
 
@@ -18,12 +19,13 @@ function formatMemory(bytes: number): string {
 type ProcessFilter = "all" | "apps" | "background";
 
 export function ProcessesPage() {
-  const { data: device } = useDeviceStatus();
-  const isConnected = device?.isOnline ?? false;
+  const { ref, device } = useCurrentDevice();
+  const canKill = useCan("commands:send");
+  const isConnected = device.isOnline;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ProcessFilter>("all");
-  const { data: processes, isFetching, isError, error, refetch, isFetched } = useProcesses();
-  const { pending, requestKill, confirm, cancel, isSending, errorMessage } = useKillProcess(() => {
+  const { data: processes, isFetching, isError, error, refetch, isFetched } = useProcesses(ref);
+  const { pending, requestKill, confirm, cancel, isSending, errorMessage } = useKillProcess(ref, () => {
     setTimeout(() => void refetch(), REFETCH_DELAY_AFTER_KILL_MS);
   });
 
@@ -44,7 +46,7 @@ export function ProcessesPage() {
   }, [processes, search, filter]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-md">
+    <div className="flex flex-col gap-md">
       <PageHeader
         title="Processes"
         subtitle={processes ? `${processes.length} running` : "Live process monitor"}
@@ -118,15 +120,17 @@ export function ProcessesPage() {
               <span className="w-16 shrink-0 text-right font-mono text-label-mono text-on-surface-variant">
                 {formatMemory(process.memoryBytes)}
               </span>
-              <button
-                type="button"
-                onClick={() => requestKill(process.pid, process.name)}
-                aria-label={`End task ${process.name}`}
-                title="End task"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-              >
-                <Icon name="close" size={16} />
-              </button>
+              {canKill && (
+                <button
+                  type="button"
+                  onClick={() => requestKill(process.pid, process.name)}
+                  aria-label={`End task ${process.name}`}
+                  title="End task"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              )}
             </div>
           ))}
         </Card>
@@ -137,7 +141,11 @@ export function ProcessesPage() {
       <ConfirmDialog
         open={pending !== null}
         title={pending ? `End "${pending.name}"?` : ""}
-        description={pending ? `This will immediately terminate PID ${pending.pid}. Any unsaved work in this process will be lost.` : ""}
+        description={
+          pending
+            ? `This will immediately terminate PID ${pending.pid} on ${device.name}. Any unsaved work in this process will be lost.`
+            : ""
+        }
         confirmLabel="End Task"
         icon="close"
         danger

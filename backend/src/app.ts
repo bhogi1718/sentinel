@@ -5,9 +5,7 @@ import { corsOrigins } from "./config/env";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalRateLimiter } from "./middleware/rateLimiter";
 import { authRouter } from "./modules/auth/auth.routes";
-import { deviceRouter } from "./modules/device/device.routes";
-import { eventRouter } from "./modules/event/event.routes";
-import { settingsRouter } from "./modules/settings/settings.routes";
+import { organizationRouter } from "./modules/organization/organization.routes";
 import { sendSuccess } from "./common/ApiResponse";
 
 export function createApp(): Application {
@@ -33,9 +31,8 @@ export function createApp(): Application {
   });
 
   app.use("/api/auth", authRouter);
-  app.use("/api/device", deviceRouter);
-  app.use("/api/events", eventRouter);
-  app.use("/api/settings", settingsRouter);
+  // Every device, event and settings route lives under /api/orgs/:orgId.
+  app.use("/api/orgs", organizationRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

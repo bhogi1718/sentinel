@@ -1,25 +1,23 @@
 import type { IconName } from "@/components/ui/Icon";
+import { routes } from "@/lib/routes";
 
 export interface NavItem {
   to: string;
   label: string;
   shortLabel: string;
   icon: IconName;
+  /// Match only this exact path (the organization home would otherwise be
+  /// "active" on every page under it).
+  end?: boolean;
 }
 
-// Primary destinations get top-level tabs (bottom nav on mobile, top of the
-// sidebar on desktop). The rest live under a "More" group so the mobile bar
-// isn't cramped with six tiny tabs.
-export const primaryNavItems: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", shortLabel: "Dash", icon: "dashboard" },
-  { to: "/events", label: "Events", shortLabel: "Events", icon: "notifications" },
-  { to: "/device", label: "Device", shortLabel: "Device", icon: "laptop_mac" },
-];
-
-export const moreNavItems: NavItem[] = [
-  { to: "/files", label: "Files", shortLabel: "Files", icon: "folder" },
-  { to: "/processes", label: "Processes", shortLabel: "Proc", icon: "terminal" },
-  { to: "/settings", label: "Settings", shortLabel: "Set", icon: "settings" },
-];
-
-export const navItems: NavItem[] = [...primaryNavItems, ...moreNavItems];
+/// Navigation for one organization. Device pages (live view, processes,
+/// files) are reached through Devices, since they belong to a device.
+export function navItemsFor(orgId: string): NavItem[] {
+  return [
+    { to: routes.dashboard(orgId), label: "Overview", shortLabel: "Home", icon: "dashboard", end: true },
+    { to: routes.devices(orgId), label: "Devices", shortLabel: "Devices", icon: "devices" },
+    { to: routes.events(orgId), label: "Activity", shortLabel: "Activity", icon: "notifications" },
+    { to: routes.settings(orgId), label: "Settings", shortLabel: "Settings", icon: "settings" },
+  ];
+}

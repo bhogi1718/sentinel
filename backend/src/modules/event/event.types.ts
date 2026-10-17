@@ -10,6 +10,8 @@ export interface ReportedEvent {
 
 export interface EventWithDevice {
   id: string;
+  orgId: string;
+  deviceId: string;
   type: EventType;
   metadata: unknown;
   occurredAt: Date;

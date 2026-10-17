@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import type { DeviceRef } from "@/api/paths";
 import { screenshotApi } from "@/api/screenshot.api";
 
 /// Captures a screenshot on demand and exposes it as an object URL for an
@@ -7,12 +8,12 @@ import { screenshotApi } from "@/api/screenshot.api";
 /// design decision: on-demand only, no stored history) - the object URL is
 /// the only copy that ever exists, and only for as long as this hook stays
 /// mounted or until the next capture replaces it.
-export function useScreenshot() {
+export function useScreenshot(ref: DeviceRef) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const previousUrl = useRef<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => screenshotApi.capture(),
+    mutationFn: () => screenshotApi.capture(ref),
     onSuccess: (blob) => {
       if (previousUrl.current) {
         URL.revokeObjectURL(previousUrl.current);

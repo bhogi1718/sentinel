@@ -16,6 +16,8 @@ import { processListResponseSchema } from "../../modules/process/process.validat
 import { screenshotService } from "../../modules/screenshot/screenshot.service";
 import { screenshotErrorSchema } from "../../modules/screenshot/screenshot.validation";
 import { streamService } from "../../modules/stream/stream.service";
+import { presence } from "../presence";
+import { deviceRoom } from "../rooms";
 import { broadcastDeviceStatus } from "../socket";
 
 export interface AgentSocketData {
@@ -25,14 +27,6 @@ export interface AgentSocketData {
 type AgentSocket = Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, AgentSocketData> & {
   device?: AuthenticatedDevice;
 };
-
-// Tracks which socket most recently claimed each device as online, so a
-// disconnect handler from a stale (already-superseded) socket can't
-// clobber isOnline back to false after a newer reconnect already marked it
-// true. Reconnects can arrive fast enough (a few ms apart, e.g. the
-// force-reconnect-on-failed-emit path) that the two setOnlineStatus calls
-// are not guaranteed to land in the order their sockets actually occurred.
-const latestSocketByDevice = new Map<string, string>();
 
 export function registerAgentNamespace(io: SocketIOServer): void {
   const namespace = io.of("/agent");
@@ -69,12 +63,16 @@ export function registerAgentNamespace(io: SocketIOServer): void {
     const device = socket.device!;
     logger.info(`Agent connected: ${device.name} (${device.id})`);
     socket.data.deviceId = device.id;
-    latestSocketByDevice.set(device.id, socket.id);
+    presence.connected(device.id, socket.id);
+    // Requests to this agent are addressed to its device room (see
+    // findAgentSocket). Joining the in-memory adapter's room is synchronous,
+    // so the socket is reachable before any handler below can run.
+    void socket.join(deviceRoom(device.id));
 
     deviceRepository.setOnlineStatus(device.id, true).catch((err: unknown) => {
       logger.error(`Failed to mark device ${device.id} online`, { error: err instanceof Error ? err.message : err });
     });
-    broadcastDeviceStatus(device.id, true);
+    broadcastDeviceStatus(device.orgId, device.id, true);
 
     socket.on("event:report", (payload: unknown, ack: (response: { success: boolean; error?: string }) => void) => {
       const parsed = reportEventSchema.safeParse(payload);
@@ -86,7 +84,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
       void (async () => {
         try {
-          await eventService.recordEvent(device.id, device.name, parsed.data);
+          await eventService.recordEvent(device, parsed.data);
           await deviceRepository.updateLastSeen(device.id);
           ack({ success: true });
         } catch (err) {
@@ -107,7 +105,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
       void (async () => {
         try {
-          await commandService.resolveAck(parsed.data.commandId, parsed.data.success, parsed.data.error);
+          await commandService.resolveAck(device.id, parsed.data.commandId, parsed.data.success, parsed.data.error);
         } catch (err) {
           logger.error(`Failed to resolve command:ack from device ${device.id}`, {
             error: err instanceof Error ? err.message : err,
@@ -123,7 +121,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      metricsService.resolveResponse(parsed.data.requestId, parsed.data.metrics);
+      metricsService.resolveResponse(device.id, parsed.data.requestId, parsed.data.metrics);
     });
 
     socket.on("process:list:response", (payload: unknown) => {
@@ -133,7 +131,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      processService.resolveResponse(parsed.data.requestId, parsed.data.processes);
+      processService.resolveResponse(device.id, parsed.data.requestId, parsed.data.processes);
     });
 
     socket.on("files:list:response", (payload: unknown) => {
@@ -143,7 +141,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      fileService.resolveListResponse(parsed.data.requestId, parsed.data.entries);
+      fileService.resolveListResponse(device.id, parsed.data.requestId, parsed.data.entries);
     });
 
     socket.on("files:list:error", (payload: unknown) => {
@@ -153,7 +151,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      fileService.rejectListResponse(parsed.data.requestId, parsed.data.error);
+      fileService.rejectListResponse(device.id, parsed.data.requestId, parsed.data.error);
     });
 
     // The agent's Socket.IO client library can only send a single Payload
@@ -170,7 +168,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
       const requestId = framed.toString("utf8", 0, REQUEST_ID_PREFIX_LENGTH);
       const chunk = framed.subarray(REQUEST_ID_PREFIX_LENGTH);
-      fileService.handleDownloadChunk(requestId, chunk);
+      fileService.handleDownloadChunk(device.id, requestId, chunk);
     });
 
     socket.on("files:download:complete", (payload: unknown) => {
@@ -180,7 +178,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      fileService.handleDownloadComplete(requestId);
+      fileService.handleDownloadComplete(device.id, requestId);
     });
 
     socket.on("files:download:error", (payload: unknown) => {
@@ -190,7 +188,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      fileService.handleDownloadError(data.requestId, data.error);
+      fileService.handleDownloadError(device.id, data.requestId, data.error);
     });
 
     // A screenshot fits in a single binary emit (unlike file downloads,
@@ -204,7 +202,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
 
       const requestId = framed.toString("utf8", 0, REQUEST_ID_PREFIX_LENGTH);
       const pngBytes = framed.subarray(REQUEST_ID_PREFIX_LENGTH);
-      screenshotService.resolveResponse(requestId, pngBytes);
+      screenshotService.resolveResponse(device.id, requestId, pngBytes);
     });
 
     socket.on("screenshot:error", (payload: unknown) => {
@@ -214,7 +212,7 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         return;
       }
 
-      screenshotService.rejectResponse(parsed.data.requestId, parsed.data.error);
+      screenshotService.rejectResponse(device.id, parsed.data.requestId, parsed.data.error);
     });
 
     // Live-view frames: a binary payload prefixed with the 36-byte session
@@ -224,33 +222,30 @@ export function registerAgentNamespace(io: SocketIOServer): void {
         logger.error(`Received non-buffer stream:frame from device ${device.id}`);
         return;
       }
-      streamService.handleAgentFrame(framed);
+      streamService.handleAgentFrame(device.id, framed);
     });
 
     socket.on("disconnect", () => {
       logger.info(`Agent disconnected: ${device.name} (${device.id})`);
 
       // A fast reconnect (e.g. the agent's force-reconnect-on-failed-emit
-      // path) can already have a newer socket registered as "latest" by
-      // the time this fires - if so, this disconnect is stale and must not
-      // clobber isOnline back to false, NOR reset the live-view state, for a
-      // device that is, in fact, still connected (and possibly streaming)
-      // via that newer socket. Both side effects below must therefore run
-      // only for the socket that is actually the current one.
-      if (latestSocketByDevice.get(device.id) !== socket.id) {
+      // path) can already have a newer socket registered by the time this
+      // fires - if so, this disconnect is stale and must not mark the device
+      // offline, NOR reset the live-view state, for a device that is, in
+      // fact, still connected (and possibly streaming) via that newer socket.
+      if (!presence.disconnected(device.id, socket.id)) {
         logger.info(`Ignoring stale disconnect for device ${device.id} (superseded by a newer connection)`);
         return;
       }
-      latestSocketByDevice.delete(device.id);
 
       // The current agent really dropped; reset live-view state so a later
       // viewer request starts a fresh session against the reconnected agent.
-      streamService.handleAgentDisconnected();
+      streamService.handleAgentDisconnected(device.id);
 
       deviceRepository.setOnlineStatus(device.id, false).catch((err: unknown) => {
         logger.error(`Failed to mark device ${device.id} offline`, { error: err instanceof Error ? err.message : err });
       });
-      broadcastDeviceStatus(device.id, false);
+      broadcastDeviceStatus(device.orgId, device.id, false);
     });
   });
 }

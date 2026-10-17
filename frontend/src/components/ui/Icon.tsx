@@ -71,7 +71,17 @@ export type IconName =
   | "dark_mode"
   | "brightness_auto"
   | "person"
-  | "menu";
+  | "menu"
+  | "add"
+  | "content_copy"
+  | "check"
+  | "devices"
+  | "group"
+  | "apartment"
+  | "unfold_more"
+  | "arrow_back"
+  | "shield_person"
+  | "schedule";
 
 interface IconProps {
   name: IconName;

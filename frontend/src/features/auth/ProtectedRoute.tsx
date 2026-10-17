@@ -1,19 +1,15 @@
 import { Navigate, Outlet } from "react-router-dom";
+import { FullPageSpinner } from "@/components/ui/FullPageSpinner";
+import { routes } from "@/lib/routes";
 import { useAuth } from "./useAuth";
 
 export function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />
-      </div>
-    );
-  }
+  if (isLoading) return <FullPageSpinner />;
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={routes.login} replace />;
   }
 
   return <Outlet />;

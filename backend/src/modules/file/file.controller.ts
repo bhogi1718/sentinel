@@ -3,13 +3,14 @@ import path from "path";
 import { ApiError } from "../../common/ApiError";
 import { logger } from "../../config/logger";
 import { sendSuccess } from "../../common/ApiResponse";
+import { getDevice } from "../../common/requestContext";
 import { DownloadFileQuery, ListFilesQuery } from "./file.validation";
 import { fileService } from "./file.service";
 
 export const fileController = {
   async list(req: Request, res: Response): Promise<void> {
     const { path: dirPath } = req.query as unknown as ListFilesQuery;
-    const entries = await fileService.listFiles(dirPath);
+    const entries = await fileService.listFiles(getDevice(req), dirPath);
     sendSuccess(res, entries);
   },
 
@@ -20,13 +21,14 @@ export const fileController = {
   /// connection is simply destroyed and the browser sees a failed download.
   async download(req: Request, res: Response): Promise<void> {
     const { path: filePath } = req.query as unknown as DownloadFileQuery;
+    const device = getDevice(req);
     const fileName = path.basename(filePath) || "download";
 
     let headersSent = false;
 
     await new Promise<void>((resolve) => {
       fileService
-        .startDownload(filePath, {
+        .startDownload(device, filePath, {
           onChunk: (chunk) => {
             if (!headersSent) {
               headersSent = true;

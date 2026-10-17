@@ -1,8 +1,10 @@
 # Sentinel
 
-A personal remote monitoring and control platform for my own Windows laptop. Single-owner by design, not a SaaS product.
+[![CI](https://github.com/bhogi1718/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/bhogi1718/sentinel/actions/workflows/ci.yml)
 
-A **Rust agent** runs as a Windows Service and streams live system state to a **Node/Express backend** over Socket.IO. A **React dashboard** lets me check on the laptop, watch its screen live, and send commands from anywhere.
+A multi-tenant remote monitoring and control platform for Windows laptops. Organizations own their devices, members have roles, and nothing is ever visible across organizations.
+
+A **Rust agent** runs as a Windows Service and streams live system state to a **Node/Express backend** over Socket.IO. A **React dashboard** lets members check on their organization's laptops, watch their screens live, and send commands from anywhere.
 
 ## Features
 
@@ -14,7 +16,10 @@ A **Rust agent** runs as a Windows Service and streams live system state to a **
 - **File browser:** browse and download files from the laptop, with in-folder search
 - **Screenshots on demand:** grab a full-resolution capture of the current screen
 - **Telegram alerts:** optional push notifications for device events, set up entirely from the dashboard
-- **Auth:** JWT login with refresh tokens. No forgot-password flow by design (single admin, recoverable with a local script).
+- **Organizations and roles:** every device, event and command belongs to an organization. Members are Owners, Admins or Viewers: viewers can look, admins can also use files, screenshots, the live view and remote commands. A user can belong to several organizations and switch between them.
+- **Isolation:** every API route is scoped to `/api/orgs/:orgId`, realtime updates are delivered per organization, and agent replies are accepted only from the device that was asked. A real-database test suite proves it ([architecture](docs/architecture/multi-tenant-core.md)).
+- **Command history:** every remote command records who sent it and how it ended.
+- **Auth:** JWT login with refresh tokens. There is no sign-up or password-reset flow yet: accounts are created with the seed script.
 - **Runs as a Windows Service:** the agent starts on boot and reconnects on its own if the backend drops
 
 ## Dashboard
@@ -94,7 +99,7 @@ Stop-Process -Id <PID> -Force
 cd backend
 npx prisma generate
 npx prisma migrate dev
-npm run seed              # creates the admin user + laptop agent device token
+npm run seed              # creates the admin user, a "Personal" organization they own, and its first device token
 ```
 
 `npm run seed` prints the device token once - copy it somewhere safe, it's needed for the Rust agent (`agent/agent.toml`) and cannot be retrieved again. If lost, rotate it instead of re-seeding:
@@ -117,7 +122,16 @@ npm run dev
 
 Runs on `http://localhost:5173`. Vite proxies `/api` and `/socket.io` to the backend on port 5000 automatically (see `frontend/vite.config.ts`), so no CORS setup is needed locally.
 
-Open `http://localhost:5173` in a browser and log in with the admin email/password from `backend/.env` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`).
+Open `http://localhost:5173` in a browser and log in with the admin email/password from `backend/.env` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). You land in the "Personal" organization; add more laptops from **Devices > Add device**, which shows each device's agent token once.
+
+### Try it without any database
+
+```powershell
+cd backend
+npm run db:sandbox        # in-memory Postgres with demo organizations; prints a DATABASE_URL and the demo accounts
+```
+
+Start the backend with that `DATABASE_URL`. The sandbox has two demo organizations and users with different roles, which makes the role-based UI easy to explore. Nothing persists.
 
 ---
 
@@ -242,7 +256,17 @@ Optional. If configured, every event also sends a message to your Telegram chat.
    Look for `"chat": { "id": ... }` in the response.
 4. On the dashboard's Settings page, click **Connect** under Telegram Alerts and paste in the bot token and chat ID. The backend sends a real test message before saving, so a wrong chat ID fails immediately instead of silently sitting broken.
 
-The bot token and chat ID are stored in the database (`Settings` table), not `.env` - connecting is optional, the app runs fine without it, notifications are just silently skipped until connected.
+The bot token and chat ID are stored per organization in the database (`organization_settings`), not `.env` - connecting is optional, the app runs fine without it, notifications are just silently skipped until connected.
+
+---
+
+## Tests
+
+```powershell
+cd backend && npm test
+```
+
+No external database is needed: the migration and isolation tests run against PGlite (Postgres compiled to WebAssembly) in-process. They cover the data migration, every route's role and tenant checks over a real database, and realtime isolation with real Socket.IO clients.
 
 ---
 

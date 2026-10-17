@@ -21,6 +21,26 @@ const consoleFormat = combine(
 
 const fileFormat = combine(timestamp(), errors({ stack: true }), json());
 
+// Tests deliberately trigger errors (misconfigured routes, unreachable
+// agents, forged replies); writing those to logs/ would mix fake failures
+// into the real log files, so test runs log to the console only.
+const fileTransports =
+  env.NODE_ENV === "test"
+    ? []
+    : [
+        new winston.transports.File({
+          filename: path.join(logsDir, "error.log"),
+          level: "error",
+          maxsize: 5 * 1024 * 1024,
+          maxFiles: 5,
+        }),
+        new winston.transports.File({
+          filename: path.join(logsDir, "combined.log"),
+          maxsize: 10 * 1024 * 1024,
+          maxFiles: 5,
+        }),
+      ];
+
 export const logger = winston.createLogger({
   level: env.NODE_ENV === "production" ? "info" : "debug",
   format: fileFormat,
@@ -28,16 +48,6 @@ export const logger = winston.createLogger({
     new winston.transports.Console({
       format: env.NODE_ENV === "production" ? fileFormat : consoleFormat,
     }),
-    new winston.transports.File({
-      filename: path.join(logsDir, "error.log"),
-      level: "error",
-      maxsize: 5 * 1024 * 1024,
-      maxFiles: 5,
-    }),
-    new winston.transports.File({
-      filename: path.join(logsDir, "combined.log"),
-      maxsize: 10 * 1024 * 1024,
-      maxFiles: 5,
-    }),
+    ...fileTransports,
   ],
 });

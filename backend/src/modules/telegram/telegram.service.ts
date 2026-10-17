@@ -4,20 +4,23 @@ import { settingsRepository } from "../settings/settings.repository";
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 
 export const telegramService = {
-  async isConfigured(): Promise<boolean> {
-    const settings = await settingsRepository.get();
+  async isConfigured(orgId: string): Promise<boolean> {
+    const settings = await settingsRepository.get(orgId);
     return Boolean(settings?.telegramBotToken && settings?.telegramChatId);
   },
 
-  async sendMessage(text: string): Promise<void> {
-    const settings = await settingsRepository.get();
-    if (!settings?.telegramBotToken || !settings.telegramChatId) {
-      return;
-    }
-
-    const url = `${TELEGRAM_API_BASE}/bot${settings.telegramBotToken}/sendMessage`;
-
+  /// Sends to the given organization's configured chat, if it has one.
+  /// Never rejects: callers fire this and move on (a notification must not
+  /// fail the event that triggered it), so every failure - reading the
+  /// settings included - is logged here with its organization instead.
+  async sendMessage(orgId: string, text: string): Promise<void> {
     try {
+      const settings = await settingsRepository.get(orgId);
+      if (!settings?.telegramBotToken || !settings.telegramChatId) {
+        return;
+      }
+
+      const url = `${TELEGRAM_API_BASE}/bot${settings.telegramBotToken}/sendMessage`;
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,6 +37,7 @@ export const telegramService = {
       }
     } catch (err) {
       logger.error("Failed to send Telegram notification", {
+        orgId,
         error: err instanceof Error ? err.message : err,
       });
     }

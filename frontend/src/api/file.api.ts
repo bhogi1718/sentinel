@@ -1,4 +1,5 @@
 import { apiClient, getAccessToken } from "./client";
+import { devicePath, type DeviceRef } from "./paths";
 import { API_BASE_URL } from "@/lib/apiConfig";
 
 export interface FileEntry {
@@ -9,8 +10,8 @@ export interface FileEntry {
 }
 
 export const fileApi = {
-  async list(path: string): Promise<FileEntry[]> {
-    const response = await apiClient.get<{ success: true; data: FileEntry[] }>("/device/files", {
+  async list(ref: DeviceRef, path: string): Promise<FileEntry[]> {
+    const response = await apiClient.get<{ success: true; data: FileEntry[] }>(`${devicePath(ref)}/files`, {
       params: { path },
     });
     return response.data.data;
@@ -20,9 +21,9 @@ export const fileApi = {
   /// attach an Authorization header - the access token travels as a query
   /// param instead, accepted only by this one endpoint (authGuardQuery on
   /// the backend) rather than relaxing auth everywhere.
-  downloadUrl(path: string): string {
+  downloadUrl(ref: DeviceRef, path: string): string {
     const token = getAccessToken() ?? "";
     const params = new URLSearchParams({ path, token });
-    return `${API_BASE_URL}/api/device/files/download?${params.toString()}`;
+    return `${API_BASE_URL}/api${devicePath(ref)}/files/download?${params.toString()}`;
   },
 };

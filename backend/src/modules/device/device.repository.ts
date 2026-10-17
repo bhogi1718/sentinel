@@ -1,12 +1,28 @@
 import { prisma } from "../../prisma/client";
+import { OrgDevice } from "./device.types";
+
+// Everything about a device except its token hash - see OrgDevice.
+const orgDeviceSelect = {
+  id: true,
+  orgId: true,
+  name: true,
+  isOnline: true,
+  lastSeenAt: true,
+  createdAt: true,
+} as const;
 
 export const deviceRepository = {
-  findByTokenHash(tokenHash: string) {
-    return prisma.device.findUnique({ where: { tokenHash } });
+  /// The device with this id, only if it belongs to this organization.
+  findInOrg(orgId: string, deviceId: string): Promise<OrgDevice | null> {
+    return prisma.device.findFirst({ where: { id: deviceId, orgId }, select: orgDeviceSelect });
   },
 
-  findById(id: string) {
-    return prisma.device.findUnique({ where: { id } });
+  listForOrg(orgId: string): Promise<OrgDevice[]> {
+    return prisma.device.findMany({ where: { orgId }, orderBy: { createdAt: "asc" }, select: orgDeviceSelect });
+  },
+
+  findByTokenHash(tokenHash: string) {
+    return prisma.device.findUnique({ where: { tokenHash } });
   },
 
   updateLastSeen(id: string) {
@@ -16,6 +32,8 @@ export const deviceRepository = {
     });
   },
 
+  /// Last-known connection state, kept as a record only - whether a device
+  /// is reachable comes from realtime/presence, never from this column.
   setOnlineStatus(id: string, isOnline: boolean) {
     return prisma.device.update({
       where: { id },
@@ -23,13 +41,10 @@ export const deviceRepository = {
     });
   },
 
-  findFirst() {
-    return prisma.device.findFirst();
-  },
-
-  create(params: { name: string; tokenHash: string }) {
+  create(params: { orgId: string; name: string; tokenHash: string }): Promise<OrgDevice> {
     return prisma.device.create({
-      data: { name: params.name, tokenHash: params.tokenHash },
+      data: { orgId: params.orgId, name: params.name, tokenHash: params.tokenHash },
+      select: orgDeviceSelect,
     });
   },
 };

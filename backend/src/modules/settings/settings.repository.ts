@@ -1,33 +1,24 @@
 import { prisma } from "../../prisma/client";
 
-// Settings is a singleton table (see schema.prisma) - these helpers always
-// operate on "the" row, creating it on first write if it doesn't exist yet
-// rather than requiring a separate seed step the way User/Device do (there's
-// nothing meaningful to seed here; an unconfigured Settings row is just the
-// all-null default state).
+// At most one settings row exists per organization (orgId is unique), and
+// none until something is first configured - so reads may return null and
+// writes upsert rather than requiring a separate seed step.
 export const settingsRepository = {
-  get() {
-    return prisma.settings.findFirst();
+  get(orgId: string) {
+    return prisma.organizationSettings.findUnique({ where: { orgId } });
   },
 
-  async setTelegramConfig(botToken: string, chatId: string) {
-    const existing = await prisma.settings.findFirst();
-    if (existing) {
-      return prisma.settings.update({
-        where: { id: existing.id },
-        data: { telegramBotToken: botToken, telegramChatId: chatId },
-      });
-    }
-    return prisma.settings.create({
-      data: { telegramBotToken: botToken, telegramChatId: chatId },
+  setTelegramConfig(orgId: string, botToken: string, chatId: string) {
+    return prisma.organizationSettings.upsert({
+      where: { orgId },
+      create: { orgId, telegramBotToken: botToken, telegramChatId: chatId },
+      update: { telegramBotToken: botToken, telegramChatId: chatId },
     });
   },
 
-  async clearTelegramConfig() {
-    const existing = await prisma.settings.findFirst();
-    if (!existing) return;
-    await prisma.settings.update({
-      where: { id: existing.id },
+  async clearTelegramConfig(orgId: string) {
+    await prisma.organizationSettings.updateMany({
+      where: { orgId },
       data: { telegramBotToken: null, telegramChatId: null },
     });
   },

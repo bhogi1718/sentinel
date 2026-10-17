@@ -11,6 +11,8 @@ import { telegramService } from "./telegram.service";
 
 const mockedRepo = vi.mocked(settingsRepository, true);
 
+const ORG_ID = "org-1";
+
 function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unknown>; text?: () => Promise<string> }) {
   const fetchMock = vi.fn().mockResolvedValue(response);
   vi.stubGlobal("fetch", fetchMock);
@@ -23,17 +25,17 @@ describe("telegramService.isConfigured", () => {
 
   it("is false when no settings row exists", async () => {
     mockedRepo.get.mockResolvedValue(null);
-    await expect(telegramService.isConfigured()).resolves.toBe(false);
+    await expect(telegramService.isConfigured(ORG_ID)).resolves.toBe(false);
   });
 
   it("is false when only the bot token is set", async () => {
     mockedRepo.get.mockResolvedValue({ telegramBotToken: "token", telegramChatId: null } as never);
-    await expect(telegramService.isConfigured()).resolves.toBe(false);
+    await expect(telegramService.isConfigured(ORG_ID)).resolves.toBe(false);
   });
 
   it("is true when both bot token and chat ID are set", async () => {
     mockedRepo.get.mockResolvedValue({ telegramBotToken: "token", telegramChatId: "chat" } as never);
-    await expect(telegramService.isConfigured()).resolves.toBe(true);
+    await expect(telegramService.isConfigured(ORG_ID)).resolves.toBe(true);
   });
 });
 
@@ -45,8 +47,16 @@ describe("telegramService.sendMessage", () => {
     mockedRepo.get.mockResolvedValue(null);
     const fetchMock = mockFetchOnce({ ok: true });
 
-    await telegramService.sendMessage("hello");
+    await telegramService.sendMessage(ORG_ID, "hello");
 
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never rejects, even when reading the settings fails", async () => {
+    mockedRepo.get.mockRejectedValue(new Error("database unreachable"));
+    const fetchMock = mockFetchOnce({ ok: true });
+
+    await expect(telegramService.sendMessage(ORG_ID, "hello")).resolves.toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -54,8 +64,9 @@ describe("telegramService.sendMessage", () => {
     mockedRepo.get.mockResolvedValue({ telegramBotToken: "my-token", telegramChatId: "my-chat" } as never);
     const fetchMock = mockFetchOnce({ ok: true });
 
-    await telegramService.sendMessage("hello");
+    await telegramService.sendMessage(ORG_ID, "hello");
 
+    expect(mockedRepo.get).toHaveBeenCalledWith(ORG_ID);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.telegram.org/bot" + "my-token" + "/sendMessage",
       expect.objectContaining({ method: "POST" }),

@@ -12,6 +12,7 @@ export const listEventsSchema = z.object({
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().positive().max(100).default(25),
     type: z.nativeEnum(EventType).optional(),
+    deviceId: z.string().uuid().optional(),
   }),
 });
 

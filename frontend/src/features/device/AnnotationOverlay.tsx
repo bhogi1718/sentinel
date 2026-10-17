@@ -33,7 +33,15 @@ const COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#ffffff"];
 /// and saves the marked-up result as a PNG. Purely client-side: nothing is
 /// sent to or drawn on the laptop - this annotates the picture you're
 /// looking at, not the remote screen.
-export function AnnotationOverlay({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) {
+export function AnnotationOverlay({
+  deviceId,
+  imageUrl,
+  onClose,
+}: {
+  deviceId: string;
+  imageUrl: string;
+  onClose: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [tool, setTool] = useState<Tool>("pen");
@@ -41,7 +49,7 @@ export function AnnotationOverlay({ imageUrl, onClose }: { imageUrl: string; onC
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [mirror, setMirror] = useState(false);
   const drawing = useRef<Shape | null>(null);
-  const { broadcast, clear: clearRemote } = useScreenAnnotation();
+  const { broadcast, clear: clearRemote } = useScreenAnnotation(deviceId);
 
   const strokeWidth = tool === "highlight" ? 18 : 4;
 
