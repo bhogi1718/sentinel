@@ -28,8 +28,26 @@ const wireShapeSchema = z.object({
   points: z.array(wirePointSchema).max(MAX_POINTS_PER_SHAPE),
 });
 
+/// Which device a dashboard socket event is about. Sockets have no URL, so
+/// every device-specific event names its organization and device in the
+/// payload, and the handler authorizes it the same way the REST routes do.
+export const deviceTargetSchema = z.object({
+  orgId: z.string().min(1),
+  deviceId: z.string().min(1),
+});
+
+export const streamStopSchema = z.object({
+  deviceId: z.string().min(1),
+});
+
 export const annotationUpdateSchema = z.object({
+  deviceId: z.string().min(1),
   shapes: z.array(wireShapeSchema).max(MAX_SHAPES),
 });
 
+export const annotationClearSchema = z.object({
+  deviceId: z.string().min(1),
+});
+
+export type DeviceTarget = z.infer<typeof deviceTargetSchema>;
 export type AnnotationUpdate = z.infer<typeof annotationUpdateSchema>;
