@@ -7,26 +7,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// The single administrator account for this Sentinel instance.
-/// Sentinel is single-owner software: exactly one row is expected to
-/// ever exist here, created via the seed script, never through a
-/// public registration endpoint.
+/// A person who can sign in. What they can see and do is decided entirely
+/// by their memberships - a user with no membership has access to nothing.
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
+  name         String?
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
+  refreshTokens     RefreshToken[]
+  memberships       Membership[]
+  requestedCommands Command[]
 
   @@map("users")
 }
 
 /// Refresh tokens are persisted (rather than trusted purely as signed
 /// JWTs) so an individual session can be revoked on demand - e.g. if
-/// the owner's phone is lost, all outstanding sessions can be killed
-/// without waiting for token expiry.
+/// a phone is lost, all outstanding sessions can be killed without
+/// waiting for token expiry.
 model RefreshToken {
   id        String    @id @default(uuid())
   tokenHash String    @unique
@@ -40,34 +41,79 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-/// Instance-wide configuration that used to live only in .env - moved here
-/// so connecting/disconnecting/rotating an integration (currently just
-/// Telegram) never needs a server redeploy. Exactly one row is expected to
-/// ever exist, same singleton convention as User.
-model Settings {
-  id                String   @id @default(uuid())
-  telegramBotToken  String?
-  telegramChatId    String?
-  updatedAt         DateTime @updatedAt
-
-  @@map("settings")
+/// Ordered from least to most privileged - see common/permissions.ts for
+/// what each role is allowed to do.
+enum OrgRole {
+  VIEWER
+  ADMIN
+  OWNER
 }
 
-/// A laptop running the Sentinel Rust agent. Only one is expected to
-/// exist for the foreseeable future, but modeling it as a first-class
-/// entity (rather than hardcoding "the laptop") gives a clean token
-/// rotation/revocation story identical in spirit to RefreshToken.
-model Device {
-  id            String    @id @default(uuid())
-  name          String
-  tokenHash     String    @unique
-  isOnline      Boolean   @default(false)
-  lastSeenAt    DateTime?
-  createdAt     DateTime  @default(now())
+/// The tenant boundary. Every device, event and command belongs to exactly
+/// one organization, and nothing is ever visible across organizations.
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  events Event[]
+  memberships Membership[]
+  devices     Device[]
+  settings    OrganizationSettings?
+
+  @@map("organizations")
+}
+
+/// A user's role within one organization. A user can belong to several
+/// organizations, with a different role in each.
+model Membership {
+  id        String       @id @default(uuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role      OrgRole
+  createdAt DateTime     @default(now())
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@map("memberships")
+}
+
+/// Per-organization configuration that can change without a redeploy
+/// (currently just the Telegram integration). At most one row per org.
+model OrganizationSettings {
+  id               String       @id @default(uuid())
+  orgId            String       @unique
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  telegramBotToken String?
+  telegramChatId   String?
+  updatedAt        DateTime     @updatedAt
+
+  @@map("organization_settings")
+}
+
+/// A laptop running the Sentinel Rust agent. The agent authenticates with
+/// its own token (stored hashed), which also determines its organization.
+model Device {
+  id         String       @id @default(uuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String       @unique
+  isOnline   Boolean      @default(false)
+  lastSeenAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  events   Event[]
   commands Command[]
 
+  // Target of the composite foreign keys on Event and Command: they
+  // reference (id, orgId) together, so the database itself rejects a row
+  // whose orgId doesn't match its device's organization.
+  @@unique([id, orgId])
+  @@index([orgId])
   @@map("devices")
 }
 
@@ -85,18 +131,22 @@ enum EventType {
 }
 
 /// A system event reported by a device's agent. Persisted first, then
-/// broadcast to connected dashboards and sent to Telegram - persistence
-/// is the source of truth, the live push is a convenience on top of it.
+/// broadcast to the organization's dashboards and sent to Telegram -
+/// persistence is the source of truth, the live push is a convenience on
+/// top of it. orgId is copied from the device so organization-wide event
+/// lists filter on an indexed column of this table.
 model Event {
-  id        String    @id @default(uuid())
-  deviceId  String
-  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  type      EventType
-  metadata  Json?
-  occurredAt DateTime @default(now())
-  createdAt DateTime  @default(now())
+  id         String    @id @default(uuid())
+  orgId      String
+  deviceId   String
+  device     Device    @relation(fields: [deviceId, orgId], references: [id, orgId], onDelete: Cascade)
+  type       EventType
+  metadata   Json?
+  occurredAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([deviceId, occurredAt])
+  @@index([orgId, occurredAt])
   @@map("events")
 }
 
@@ -117,23 +167,28 @@ enum CommandStatus {
 }
 
 /// A remote action requested from the dashboard. Persisted immediately on
-/// request (before delivery is even attempted) so there's always an audit
-/// trail of what was asked for and when, independent of whether the agent
-/// was reachable to actually carry it out. targetPid/targetName are only
-/// set for KILL_PROCESS - every other command type acts on the whole
-/// machine and needs no target.
+/// request (before delivery is even attempted) so there's always a record
+/// of what was asked for, by whom and when, independent of whether the
+/// agent was reachable to carry it out. targetPid/targetName are only set
+/// for KILL_PROCESS - every other command type acts on the whole machine.
+/// requestedById is null for commands recorded before requesters were
+/// tracked, or whose requester has since been deleted.
 model Command {
-  id          String        @id @default(uuid())
-  deviceId    String
-  device      Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  type        CommandType
-  targetPid   Int?
-  targetName  String?
-  status      CommandStatus @default(PENDING)
-  errorMessage String?
-  requestedAt DateTime      @default(now())
+  id             String        @id @default(uuid())
+  orgId          String
+  deviceId       String
+  device         Device        @relation(fields: [deviceId, orgId], references: [id, orgId], onDelete: Cascade)
+  requestedById  String?
+  requestedBy    User?         @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  type           CommandType
+  targetPid      Int?
+  targetName     String?
+  status         CommandStatus @default(PENDING)
+  errorMessage   String?
+  requestedAt    DateTime      @default(now())
   acknowledgedAt DateTime?
 
   @@index([deviceId, requestedAt])
+  @@index([orgId, requestedAt])
   @@map("commands")
 }
