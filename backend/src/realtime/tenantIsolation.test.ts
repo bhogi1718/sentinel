@@ -92,9 +92,10 @@ beforeEach(() => {
   mockedOrgRepo.listMembershipsForUser.mockImplementation((userId: string) =>
     Promise.resolve((memberships[userId] ?? []) as never),
   );
-  mockedOrgRepo.findMembership.mockImplementation((userId: string, orgId: string) =>
-    Promise.resolve((memberships[userId]?.find((m) => m.orgId === orgId) ?? null) as never),
-  );
+  mockedOrgRepo.findMembership.mockImplementation((userId: string, orgId: string) => {
+    const membership = memberships[userId]?.find((m) => m.orgId === orgId);
+    return Promise.resolve((membership ? { ...membership, org: { id: orgId, isDemo: false } } : null) as never);
+  });
   mockedDeviceRepo.findInOrg.mockImplementation((orgId: string, deviceId: string) =>
     Promise.resolve([DEVICE_A, DEVICE_B].find((d) => d.id === deviceId && d.orgId === orgId) ?? null),
   );

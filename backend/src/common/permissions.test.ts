@@ -31,6 +31,22 @@ describe("can", () => {
   });
 });
 
+describe("the demo organization", () => {
+  it("lets demo visitors try devices, but never change the shared demo", () => {
+    const scope = { isDemo: true };
+    for (const permission of [...READ_ONLY, "files:access", "screen:view", "commands:send"] as Permission[]) {
+      expect(can("OWNER", permission, scope)).toBe(true);
+    }
+    for (const permission of ["devices:manage", "settings:manage", "members:manage", "org:manage"] as Permission[]) {
+      expect(can("OWNER", permission, scope)).toBe(false);
+    }
+  });
+
+  it("restricts nothing outside the demo organization", () => {
+    expect(permissionsFor("OWNER", { isDemo: false }).sort()).toEqual(Object.keys(PERMISSIONS).sort());
+  });
+});
+
 describe("permissionsFor", () => {
   it("returns exactly the permissions can() grants", () => {
     expect(permissionsFor("VIEWER").sort()).toEqual([...READ_ONLY].sort());

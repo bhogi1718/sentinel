@@ -7,14 +7,14 @@ export const organizationRepository = {
     return prisma.membership.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
-      include: { org: { select: { id: true, name: true, slug: true } } },
+      include: { org: { select: { id: true, name: true, slug: true, isDemo: true } } },
     });
   },
 
   findMembership(userId: string, orgId: string) {
     return prisma.membership.findUnique({
       where: { userId_orgId: { userId, orgId } },
-      include: { org: { select: { id: true, name: true, slug: true } } },
+      include: { org: { select: { id: true, name: true, slug: true, isDemo: true } } },
     });
   },
 

@@ -81,7 +81,8 @@ export type IconName =
   | "unfold_more"
   | "arrow_back"
   | "shield_person"
-  | "schedule";
+  | "schedule"
+  | "science";
 
 interface IconProps {
   name: IconName;

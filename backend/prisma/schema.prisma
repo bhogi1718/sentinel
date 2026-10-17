@@ -55,6 +55,9 @@ model Organization {
   id        String   @id @default(uuid())
   name      String
   slug      String   @unique
+  /// The public demo organization: its devices are simulated, and only
+  /// demo sessions can reach it. See docs/architecture/demo-mode.md.
+  isDemo    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

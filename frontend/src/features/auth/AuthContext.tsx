@@ -3,6 +3,7 @@ import { createContext, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { authApi } from "@/api/auth.api";
 import type { CurrentUser } from "@/api/auth.api";
+import { demoApi } from "@/api/demo.api";
 import { getAccessToken, setAccessToken, setUnauthorizedHandler } from "@/api/client";
 import { tokenStorage } from "@/api/tokenStorage";
 
@@ -11,6 +12,8 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /// Signs in as the shared demo visitor (only where the demo is enabled).
+  startDemo: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -77,9 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void restoreSession();
   }, []);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const tokens = await authApi.login(email, password);
+  const beginSession = useCallback(
+    async (tokens: { accessToken: string; refreshToken: string }) => {
       clearUserData();
       setAccessToken(tokens.accessToken);
       tokenStorage.setRefreshToken(tokens.refreshToken);
@@ -89,11 +91,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [clearUserData],
   );
 
+  const login = useCallback(
+    async (email: string, password: string) => {
+      await beginSession(await authApi.login(email, password));
+    },
+    [beginSession],
+  );
+
+  const startDemo = useCallback(async () => {
+    await beginSession(await demoApi.startSession());
+  }, [beginSession]);
+
   const value: AuthContextValue = {
     user,
     isLoading,
     isAuthenticated: user !== null && getAccessToken() !== null,
     login,
+    startDemo,
     logout,
   };
 

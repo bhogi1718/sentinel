@@ -20,7 +20,7 @@ export async function authorizeDeviceAction(
   const membership = await organizationRepository.findMembership(user.id, target.orgId);
   if (!membership) throw new Error("Device not found");
 
-  if (!can(membership.role, permission)) {
+  if (!can(membership.role, permission, { isDemo: membership.org.isDemo })) {
     throw new Error("Your role in this organization doesn't allow this action");
   }
 

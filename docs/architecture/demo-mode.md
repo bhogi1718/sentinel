@@ -1,6 +1,8 @@
 # Demo mode
 
-Status: proposed, awaiting approval. Nothing here is implemented yet.
+Status: implemented. Enabled per deployment with `DEMO_MODE=true`.
+
+Decisions taken: the demo visitor is an ADMIN of one shared demo organization, and the simulator runs inside the backend process. Demo visitors can try commands, files, screenshots and the live view, but cannot add devices, change settings or members, or change the shared account's password (`common/permissions.ts`, `auth.service.ts`).
 
 ## Goal
 
