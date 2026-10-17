@@ -70,15 +70,17 @@ export function SettingsPage() {
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setChangePasswordOpen(true)}
-            className="flex items-center gap-sm border-t border-outline-variant px-md py-sm text-body-sm text-on-surface transition-colors hover:bg-surface-container/60"
-          >
-            <Icon name="key" size={18} className="text-primary" />
-            Change password
-            <Icon name="chevron_right" size={18} className="ml-auto text-on-surface-variant" />
-          </button>
+          {!org.isDemo && (
+            <button
+              type="button"
+              onClick={() => setChangePasswordOpen(true)}
+              className="flex items-center gap-sm border-t border-outline-variant px-md py-sm text-body-sm text-on-surface transition-colors hover:bg-surface-container/60"
+            >
+              <Icon name="key" size={18} className="text-primary" />
+              Change password
+              <Icon name="chevron_right" size={18} className="ml-auto text-on-surface-variant" />
+            </button>
+          )}
         </Card>
       </section>
 

@@ -1,4 +1,5 @@
 import { createApp } from "./app";
+import { startDemo } from "./demo/startDemo";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { prisma } from "./prisma/client";
@@ -19,6 +20,16 @@ async function main(): Promise<void> {
 
   initSocketServer(server);
   logger.info("Socket.IO server initialized (/agent, /dashboard namespaces)");
+
+  if (env.DEMO_MODE) {
+    // A failure here leaves the demo unavailable but must not take the real
+    // service down with it.
+    server.once("listening", () => {
+      startDemo(env.PORT).catch((err: unknown) => {
+        logger.error("Demo mode failed to start", { error: err instanceof Error ? err.message : err });
+      });
+    });
+  }
 
   const shutdown = (signal: string): void => {
     logger.info(`Received ${signal}, shutting down gracefully`);

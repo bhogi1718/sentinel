@@ -11,7 +11,7 @@ export function requirePermission(permission: Permission) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
       const org = getOrg(req);
-      if (!can(org.role, permission)) {
+      if (!can(org.role, permission, { isDemo: org.isDemo })) {
         throw ApiError.forbidden("Your role in this organization doesn't allow this action");
       }
       next();

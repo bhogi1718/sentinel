@@ -24,7 +24,7 @@ beforeEach(() => {
 
 describe("authorizeDeviceAction", () => {
   it("returns the device to a member whose role allows the action", async () => {
-    mockedOrgRepo.findMembership.mockResolvedValue({ role: "ADMIN" } as never);
+    mockedOrgRepo.findMembership.mockResolvedValue({ role: "ADMIN", org: { isDemo: false } } as never);
     mockedDeviceRepo.findInOrg.mockResolvedValue(DEVICE);
 
     // isOnline comes from live presence, not the stored row - and no agent
@@ -42,14 +42,14 @@ describe("authorizeDeviceAction", () => {
   });
 
   it("refuses a member whose role is too low", async () => {
-    mockedOrgRepo.findMembership.mockResolvedValue({ role: "VIEWER" } as never);
+    mockedOrgRepo.findMembership.mockResolvedValue({ role: "VIEWER", org: { isDemo: false } } as never);
 
     await expect(authorizeDeviceAction(USER, TARGET, "screen:view")).rejects.toThrow(/role/);
     expect(mockedDeviceRepo.findInOrg).not.toHaveBeenCalled();
   });
 
   it("refuses a device that belongs to a different organization", async () => {
-    mockedOrgRepo.findMembership.mockResolvedValue({ role: "OWNER" } as never);
+    mockedOrgRepo.findMembership.mockResolvedValue({ role: "OWNER", org: { isDemo: false } } as never);
     mockedDeviceRepo.findInOrg.mockResolvedValue(null);
 
     await expect(authorizeDeviceAction(USER, TARGET, "screen:view")).rejects.toThrow("Device not found");

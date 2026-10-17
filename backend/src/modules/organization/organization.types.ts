@@ -7,6 +7,8 @@ export interface OrgContext {
   id: string;
   name: string;
   slug: string;
+  /// The public demo organization - see common/permissions.ts for what it restricts.
+  isDemo: boolean;
   role: OrgRole;
 }
 
@@ -15,6 +17,7 @@ export interface OrganizationForMember {
   id: string;
   name: string;
   slug: string;
+  isDemo: boolean;
   role: OrgRole;
   permissions: Permission[];
 }

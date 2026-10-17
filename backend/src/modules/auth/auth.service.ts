@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { env } from "../../config/env";
+import { isDemoUser } from "../../demo/demoSetup";
 import { ApiError } from "../../common/ApiError";
 import { authRepository } from "./auth.repository";
 import { AuthenticatedUser, AuthTokens, JwtAccessPayload, JwtRefreshPayload } from "./auth.types";
@@ -93,6 +94,15 @@ export const authService = {
     return { accessToken, refreshToken };
   },
 
+  /// Signs in a user the caller has already authenticated by other means
+  /// (the public demo session). Issues exactly what login does, so the
+  /// session refreshes, revokes and expires the same way.
+  async issueSession(user: AuthenticatedUser): Promise<AuthTokens> {
+    const accessToken = signAccessToken(user);
+    const refreshToken = await issueRefreshToken(user.id);
+    return { accessToken, refreshToken };
+  },
+
   async refresh(refreshToken: string): Promise<AuthTokens> {
     let decoded: JwtRefreshPayload;
     try {
@@ -148,6 +158,11 @@ export const authService = {
     const user = await authRepository.findUserById(userId);
     if (!user) {
       throw ApiError.unauthorized("Invalid or expired access token");
+    }
+    // Every demo visitor shares this account; a password change would lock
+    // the next visitor out.
+    if (isDemoUser(user.email)) {
+      throw ApiError.forbidden("The demo account's password can't be changed");
     }
 
     const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);

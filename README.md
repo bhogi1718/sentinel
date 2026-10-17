@@ -19,6 +19,7 @@ A **Rust agent** runs as a Windows Service and streams live system state to a **
 - **Organizations and roles:** every device, event and command belongs to an organization. Members are Owners, Admins or Viewers: viewers can look, admins can also use files, screenshots, the live view and remote commands. A user can belong to several organizations and switch between them.
 - **Isolation:** every API route is scoped to `/api/orgs/:orgId`, realtime updates are delivered per organization, and agent replies are accepted only from the device that was asked. A real-database test suite proves it ([architecture](docs/architecture/multi-tenant-core.md)).
 - **Command history:** every remote command records who sent it and how it ended.
+- **Live demo:** with `DEMO_MODE=true`, a simulated laptop runs inside the backend and a **Try the demo** button lets anyone explore the dashboard without an account ([how it works](docs/architecture/demo-mode.md)).
 - **Auth:** JWT login with refresh tokens. There is no sign-up or password-reset flow yet: accounts are created with the seed script.
 - **Runs as a Windows Service:** the agent starts on boot and reconnects on its own if the backend drops
 
@@ -210,7 +211,7 @@ Three free, indefinite (not time-boxed trial) tiers: **Neon** (database), **Rend
 1. Create an account at [render.com](https://render.com), connect your GitHub account, **New → Web Service**, pick this repo.
 2. **Root Directory:** `backend`. **Runtime:** Node. **Build Command:** `npm ci --include=dev && npm run build` (`npm ci` installs exactly what's in `package-lock.json`, no surprise version drift; `--include=dev` is required because `NODE_ENV=production` below otherwise makes npm skip `devDependencies` entirely - which is where `typescript` and every `@types/*` package live, so the build needs them even though `NODE_ENV` is `production`). **Start Command:** `npm run prisma:deploy && npm run start`.
 3. **Instance type:** Free.
-4. Add environment variables (**Environment** tab) - same keys as `backend/.env.example`: `DATABASE_URL` (from Neon above), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (your Vercel URL - you'll add this after step 3, can update later), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEVICE_NAME`, `NODE_ENV=production`.
+4. Add environment variables (**Environment** tab) - same keys as `backend/.env.example`: `DATABASE_URL` (from Neon above), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (your Vercel URL - you'll add this after step 3, can update later), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEVICE_NAME`, `NODE_ENV=production`, and optionally `DEMO_MODE=true` to enable the public demo.
 5. Deploy. Once live, note the assigned URL (`https://<something>.onrender.com`) - this is your `server_url` for the agent and the URL you'll monitor in step 4.
 6. Run the one-time seed against the new database: from your machine, temporarily point `backend/.env`'s `DATABASE_URL` at the same Neon connection string and run `cd backend && npm run seed` (prints the device token once - save it for the agent).
 
