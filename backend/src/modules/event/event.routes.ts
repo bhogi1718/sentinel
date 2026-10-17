@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { asyncHandler } from "../../common/asyncHandler";
-import { authGuard } from "../../middleware/authGuard";
+import { requirePermission } from "../../middleware/requirePermission";
 import { validateRequest } from "../../middleware/validateRequest";
 import { eventController } from "./event.controller";
 import { listEventsSchema } from "./event.validation";
 
-export const eventRouter = Router();
+/// Mounted at /api/orgs/:orgId/events, inside the org-scoped router.
+export const eventRouter = Router({ mergeParams: true });
 
-eventRouter.get("/", authGuard, validateRequest(listEventsSchema), asyncHandler(eventController.list));
+eventRouter.get("/", requirePermission("devices:view"), validateRequest(listEventsSchema), asyncHandler(eventController.list));

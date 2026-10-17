@@ -1,15 +1,15 @@
 import { randomUUID } from "crypto";
 import { ApiError } from "../../common/ApiError";
-import { deviceRepository } from "../device/device.repository";
-import { findAgentSocket } from "../../realtime/socket";
+import { connectedAgentFor } from "../device/agentConnection";
+import { OrgDevice } from "../device/device.types";
+import { DeviceBoundRequest, settlePending } from "../../realtime/pendingRequests";
 import { SystemMetrics } from "./metrics.types";
 
 const METRICS_TIMEOUT_MS = 15_000;
 
-interface PendingRequest {
+interface PendingRequest extends DeviceBoundRequest {
   resolve: (metrics: SystemMetrics) => void;
   reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
 }
 
 // Same plain-event-plus-reply pattern as commands/processes/files: the
@@ -19,19 +19,8 @@ interface PendingRequest {
 const pendingRequests = new Map<string, PendingRequest>();
 
 export const metricsService = {
-  async getMetrics(): Promise<SystemMetrics> {
-    const device = await deviceRepository.findFirst();
-    if (!device) {
-      throw ApiError.notFound("No device has been registered yet");
-    }
-    if (!device.isOnline) {
-      throw ApiError.conflict("Device is offline - cannot fetch metrics");
-    }
-
-    const agentSocket = await findAgentSocket(device.id);
-    if (!agentSocket) {
-      throw ApiError.conflict("Device is not currently connected");
-    }
+  async getMetrics(device: OrgDevice): Promise<SystemMetrics> {
+    const agentSocket = await connectedAgentFor(device, "fetch metrics");
 
     const requestId = randomUUID();
 
@@ -41,16 +30,14 @@ export const metricsService = {
         reject(ApiError.conflict("No response from agent"));
       }, METRICS_TIMEOUT_MS);
 
-      pendingRequests.set(requestId, { resolve, reject, timeout });
+      pendingRequests.set(requestId, { deviceId: device.id, resolve, reject, timeout });
       agentSocket.emit("metrics:request", { requestId });
     });
   },
 
-  resolveResponse(requestId: string, metrics: SystemMetrics): void {
-    const pending = pendingRequests.get(requestId);
-    if (!pending) return;
-    clearTimeout(pending.timeout);
-    pendingRequests.delete(requestId);
-    pending.resolve(metrics);
+  /// Called from the /agent namespace's "metrics:response" listener with
+  /// the id of the device whose agent sent the reply.
+  resolveResponse(fromDeviceId: string, requestId: string, metrics: SystemMetrics): void {
+    settlePending(pendingRequests, requestId, fromDeviceId)?.resolve(metrics);
   },
 };

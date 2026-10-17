@@ -1,24 +1,25 @@
 import { Router } from "express";
 import { asyncHandler } from "../../common/asyncHandler";
-import { authGuard } from "../../middleware/authGuard";
 import { authRateLimiter } from "../../middleware/rateLimiter";
+import { requirePermission } from "../../middleware/requirePermission";
 import { validateRequest } from "../../middleware/validateRequest";
 import { settingsController } from "./settings.controller";
 import { connectTelegramSchema } from "./settings.validation";
 
-export const settingsRouter = Router();
+/// Mounted at /api/orgs/:orgId/settings, inside the org-scoped router.
+export const settingsRouter = Router({ mergeParams: true });
 
-settingsRouter.get("/integrations", authGuard, asyncHandler(settingsController.getIntegrationStatus));
+settingsRouter.get("/integrations", requirePermission("org:view"), asyncHandler(settingsController.getIntegrationStatus));
 settingsRouter.post(
   "/integrations/telegram",
-  authGuard,
+  requirePermission("settings:manage"),
   authRateLimiter,
   validateRequest(connectTelegramSchema),
   asyncHandler(settingsController.connectTelegram),
 );
 settingsRouter.delete(
   "/integrations/telegram",
-  authGuard,
+  requirePermission("settings:manage"),
   authRateLimiter,
   asyncHandler(settingsController.disconnectTelegram),
 );

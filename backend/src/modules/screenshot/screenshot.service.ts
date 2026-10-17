@@ -1,14 +1,14 @@
 import { randomUUID } from "crypto";
 import { ApiError } from "../../common/ApiError";
-import { deviceRepository } from "../device/device.repository";
-import { findAgentSocket } from "../../realtime/socket";
+import { connectedAgentFor } from "../device/agentConnection";
+import { OrgDevice } from "../device/device.types";
+import { DeviceBoundRequest, settlePending } from "../../realtime/pendingRequests";
 
 const SCREENSHOT_TIMEOUT_MS = 20_000;
 
-interface PendingCapture {
+interface PendingCapture extends DeviceBoundRequest {
   resolve: (pngBytes: Buffer) => void;
   reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
 }
 
 // Same plain-event-plus-reply pattern as metrics/processes/files: the
@@ -20,19 +20,8 @@ interface PendingCapture {
 const pendingCaptures = new Map<string, PendingCapture>();
 
 export const screenshotService = {
-  async capture(): Promise<Buffer> {
-    const device = await deviceRepository.findFirst();
-    if (!device) {
-      throw ApiError.notFound("No device has been registered yet");
-    }
-    if (!device.isOnline) {
-      throw ApiError.conflict("Device is offline - cannot capture a screenshot");
-    }
-
-    const agentSocket = await findAgentSocket(device.id);
-    if (!agentSocket) {
-      throw ApiError.conflict("Device is not currently connected");
-    }
+  async capture(device: OrgDevice): Promise<Buffer> {
+    const agentSocket = await connectedAgentFor(device, "capture a screenshot");
 
     const requestId = randomUUID();
 
@@ -42,24 +31,18 @@ export const screenshotService = {
         reject(ApiError.conflict("No response from agent"));
       }, SCREENSHOT_TIMEOUT_MS);
 
-      pendingCaptures.set(requestId, { resolve, reject, timeout });
+      pendingCaptures.set(requestId, { deviceId: device.id, resolve, reject, timeout });
       agentSocket.emit("screenshot:request", { requestId });
     });
   },
 
-  resolveResponse(requestId: string, pngBytes: Buffer): void {
-    const pending = pendingCaptures.get(requestId);
-    if (!pending) return;
-    clearTimeout(pending.timeout);
-    pendingCaptures.delete(requestId);
-    pending.resolve(pngBytes);
+  resolveResponse(fromDeviceId: string, requestId: string, pngBytes: Buffer): void {
+    settlePending(pendingCaptures, requestId, fromDeviceId)?.resolve(pngBytes);
   },
 
-  rejectResponse(requestId: string, message: string): void {
-    const pending = pendingCaptures.get(requestId);
+  rejectResponse(fromDeviceId: string, requestId: string, message: string): void {
+    const pending = settlePending(pendingCaptures, requestId, fromDeviceId);
     if (!pending) return;
-    clearTimeout(pending.timeout);
-    pendingCaptures.delete(requestId);
     // 502-shaped: the agent reported a genuine capture failure (e.g. no
     // interactive session, GDI error) rather than this backend rejecting
     // the request itself - same "upstream failed" precedent file.controller
