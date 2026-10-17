@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import { devicePath, type DeviceRef } from "./paths";
 
 export interface SystemMetrics {
   cpuPercent: number;
@@ -15,8 +16,8 @@ export interface SystemMetrics {
 }
 
 export const metricsApi = {
-  async get(): Promise<SystemMetrics> {
-    const response = await apiClient.get<{ success: true; data: SystemMetrics }>("/device/metrics");
+  async get(ref: DeviceRef): Promise<SystemMetrics> {
+    const response = await apiClient.get<{ success: true; data: SystemMetrics }>(`${devicePath(ref)}/metrics`);
     return response.data.data;
   },
 };

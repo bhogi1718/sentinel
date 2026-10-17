@@ -13,23 +13,24 @@ export interface WireShape {
   points: WirePoint[];
 }
 
-/// Pushes annotation shapes to the laptop's on-screen overlay over the
-/// dashboard socket (backend relays to the agent, which relays to the
-/// display-only helper overlay). Coordinates are already normalized 0..1
-/// over the screen by the caller.
-export function useScreenAnnotation() {
+/// Pushes annotation shapes to one device's on-screen overlay over the
+/// dashboard socket (backend relays to that device's agent, which relays to
+/// the display-only helper overlay). Coordinates are already normalized
+/// 0..1 over the screen by the caller. The backend only accepts these from
+/// a socket that is currently watching that device's live view.
+export function useScreenAnnotation(deviceId: string) {
   const { socket } = useSocket();
 
   const broadcast = useCallback(
     (shapes: WireShape[]) => {
-      socket?.emit("annotation:update", { shapes });
+      socket?.emit("annotation:update", { deviceId, shapes });
     },
-    [socket],
+    [socket, deviceId],
   );
 
   const clear = useCallback(() => {
-    socket?.emit("annotation:clear");
-  }, [socket]);
+    socket?.emit("annotation:clear", { deviceId });
+  }, [socket, deviceId]);
 
   return { broadcast, clear };
 }

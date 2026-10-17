@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input, PageHeader, StateBlock, StatusPill } from "@/components/ui/kit";
 import { eventDisplayMap, formatClockTime, toneClasses } from "@/lib/eventDisplay";
+import { useDevices } from "@/features/devices/useDevices";
+import { useCurrentOrg } from "@/features/org/useOrg";
 import type { EventType, SentinelEvent } from "@/types/event";
 import { useEvents } from "./useEvents";
 
@@ -43,11 +45,18 @@ function TimelineItem({ event }: { event: SentinelEvent }) {
 }
 
 export function EventsPage() {
+  const { org } = useCurrentOrg();
+  const { data: devices } = useDevices(org.id);
   const [page, setPage] = useState(1);
   const [type, setType] = useState<EventType | "">("");
+  const [deviceId, setDeviceId] = useState("");
   const [search, setSearch] = useState("");
 
-  const { data, isLoading, isPlaceholderData } = useEvents({ page, type: type || undefined });
+  const { data, isLoading, isPlaceholderData } = useEvents(org.id, {
+    page,
+    type: type || undefined,
+    deviceId: deviceId || undefined,
+  });
 
   const filteredItems = useMemo(() => {
     if (!data) return [];
@@ -76,7 +85,7 @@ export function EventsPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-md">
       <PageHeader
         title="Activity"
-        subtitle={data ? `${data.pagination.total} events recorded` : "System event timeline"}
+        subtitle={data ? `${data.pagination.total} events across ${org.name}` : "System event timeline"}
         icon="history"
         trailing={<StatusPill tone="success" pulse label="Live" />}
       />
@@ -84,7 +93,26 @@ export function EventsPage() {
       {/* Filters */}
       <div className="flex flex-col gap-sm sm:flex-row">
         <Input icon="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events…" className="flex-1" />
+        {devices && devices.length > 1 && (
+          <select
+            value={deviceId}
+            onChange={(e) => {
+              setDeviceId(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by device"
+            className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 font-mono text-label-mono uppercase text-on-surface outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+          >
+            <option value="">All devices</option>
+            {devices.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.name}
+              </option>
+            ))}
+          </select>
+        )}
         <select
+          aria-label="Filter by event type"
           value={type}
           onChange={(e) => {
             setType(e.target.value as EventType | "");
@@ -127,7 +155,7 @@ export function EventsPage() {
         </div>
       ) : (
         <StateBlock icon="history" title="No events match your filters">
-          Try a different type or clear the search.
+          Try a different device or type, or clear the search.
         </StateBlock>
       )}
 

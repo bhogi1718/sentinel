@@ -3,17 +3,23 @@ import { useLocation } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/features/auth/useAuth";
-import { useDeviceStatus } from "@/features/device/useDeviceStatus";
-import { navItems } from "./navItems";
+import { useDevices } from "@/features/devices/useDevices";
+import { useCurrentOrg } from "@/features/org/useOrg";
+import { navItemsFor } from "./navItems";
+import { OrgSwitcher } from "./OrgSwitcher";
 
-function currentPageLabel(pathname: string): string {
-  return navItems.find((item) => pathname.startsWith(item.to))?.label ?? "Sentinel";
+/// The most specific nav entry the path falls under (device pages count as
+/// Devices).
+function currentPageLabel(orgId: string, pathname: string): string {
+  const matches = navItemsFor(orgId).filter((item) => (item.end ? pathname === item.to : pathname.startsWith(item.to)));
+  return matches.sort((a, b) => b.to.length - a.to.length)[0]?.label ?? "Sentinel";
 }
 
 export function Topbar() {
   const { user, logout } = useAuth();
-  const { data: deviceStatus } = useDeviceStatus();
-  const isOnline = deviceStatus?.isOnline ?? false;
+  const { org, organizations } = useCurrentOrg();
+  const { data: devices } = useDevices(org.id);
+  const online = devices?.filter((device) => device.isOnline).length ?? 0;
   const location = useLocation();
   const [now, setNow] = useState(() => new Date());
   const [menuOpen, setMenuOpen] = useState(false);
@@ -43,12 +49,12 @@ export function Topbar() {
           </div>
           <div className="flex flex-col">
             <span className="font-mono text-body-md uppercase leading-none tracking-tight text-on-surface">
-              {currentPageLabel(location.pathname)}
+              {currentPageLabel(org.id, location.pathname)}
             </span>
             <div className="flex items-center gap-xs">
-              <span className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-success" : "bg-outline"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${online > 0 ? "bg-success" : "bg-outline"}`} />
               <span className="font-mono text-label-mono uppercase text-on-surface-variant">
-                {isOnline ? "System Online" : "Awaiting Agent"}
+                {devices ? `${online}/${devices.length} online` : org.name}
               </span>
             </div>
           </div>
@@ -69,6 +75,11 @@ export function Topbar() {
 
             {menuOpen && (
               <div className="absolute right-0 top-10 z-50 w-56 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-xl">
+                {organizations.length > 1 && (
+                  <div className="border-b border-outline-variant p-sm md:hidden">
+                    <OrgSwitcher />
+                  </div>
+                )}
                 <div className="flex flex-col gap-0.5 px-md py-sm">
                   <span className="truncate text-body-sm text-on-surface">{user?.email}</span>
                   <span className="font-mono text-label-mono text-on-surface-variant">

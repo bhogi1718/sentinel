@@ -12,6 +12,8 @@ export type EventType =
 
 export interface SentinelEvent {
   id: string;
+  orgId: string;
+  deviceId: string;
   type: EventType;
   metadata: Record<string, unknown> | null;
   occurredAt: string;

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { authApi } from "@/api/auth.api";
@@ -17,8 +18,17 @@ interface AuthContextValue {
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Everything cached belongs to whoever was signed in: their organizations,
+  // roles, devices and events. Dropped whenever the signed-in user changes or
+  // signs out, so the next user in this browser never sees a previous
+  // user's data, even for a moment.
+  const clearUserData = useCallback(() => {
+    queryClient.clear();
+  }, [queryClient]);
 
   const logout = useCallback(async () => {
     const refreshToken = tokenStorage.getRefreshToken();
@@ -31,12 +41,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setAccessToken(null);
     tokenStorage.clearRefreshToken();
+    clearUserData();
     setUser(null);
-  }, []);
+  }, [clearUserData]);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => setUser(null));
-  }, []);
+    setUnauthorizedHandler(() => {
+      clearUserData();
+      setUser(null);
+    });
+  }, [clearUserData]);
 
   useEffect(() => {
     async function restoreSession(): Promise<void> {
@@ -63,13 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void restoreSession();
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const tokens = await authApi.login(email, password);
-    setAccessToken(tokens.accessToken);
-    tokenStorage.setRefreshToken(tokens.refreshToken);
-    const currentUser = await authApi.me();
-    setUser(currentUser);
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const tokens = await authApi.login(email, password);
+      clearUserData();
+      setAccessToken(tokens.accessToken);
+      tokenStorage.setRefreshToken(tokens.refreshToken);
+      const currentUser = await authApi.me();
+      setUser(currentUser);
+    },
+    [clearUserData],
+  );
 
   const value: AuthContextValue = {
     user,

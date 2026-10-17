@@ -1,9 +1,11 @@
 import { useState } from "react";
+import type { DeviceRef } from "@/api/paths";
 import { Icon } from "@/components/ui/Icon";
 import { AnnotationOverlay } from "@/features/device/AnnotationOverlay";
 import { useScreenStream } from "@/features/device/useScreenStream";
 
 interface LiveScreenViewerProps {
+  deviceRef: DeviceRef;
   isConnected: boolean;
 }
 
@@ -11,8 +13,8 @@ interface LiveScreenViewerProps {
 /// JPEG frames the agent streams, with no input sent back to the laptop.
 /// Controls float over the frame; frame stats (fps, staleness) sit in the
 /// corner so a stalled feed is distinguishable from a slow one.
-export function LiveScreenViewer({ isConnected }: LiveScreenViewerProps) {
-  const { frameUrl, isStreaming, isStarting, error, fps, secondsSinceFrame, start, stop } = useScreenStream();
+export function LiveScreenViewer({ deviceRef, isConnected }: LiveScreenViewerProps) {
+  const { frameUrl, isStreaming, isStarting, error, fps, secondsSinceFrame, start, stop } = useScreenStream(deviceRef);
   const [annotateUrl, setAnnotateUrl] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -74,7 +76,9 @@ export function LiveScreenViewer({ isConnected }: LiveScreenViewerProps) {
       {error && <span className="px-xs text-body-sm text-error">{error}</span>}
       <span className="px-xs text-body-sm text-on-surface-variant">View-only · no input is sent to the laptop</span>
 
-      {annotateUrl && <AnnotationOverlay imageUrl={annotateUrl} onClose={() => setAnnotateUrl(null)} />}
+      {annotateUrl && (
+        <AnnotationOverlay deviceId={deviceRef.deviceId} imageUrl={annotateUrl} onClose={() => setAnnotateUrl(null)} />
+      )}
 
       {expanded && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">

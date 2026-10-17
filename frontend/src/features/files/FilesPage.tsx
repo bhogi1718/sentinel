@@ -3,7 +3,7 @@ import { fileApi } from "@/api/file.api";
 import { extractErrorMessage } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input, PageHeader, StateBlock } from "@/components/ui/kit";
-import { useDeviceStatus } from "@/features/device/useDeviceStatus";
+import { useCurrentDevice } from "@/features/devices/DeviceContext";
 import { useFiles } from "./useFiles";
 
 function formatSize(bytes: number): string {
@@ -20,11 +20,11 @@ function formatModifiedAt(iso: string): string {
 }
 
 export function FilesPage() {
-  const { data: device } = useDeviceStatus();
-  const isConnected = device?.isOnline ?? false;
+  const { ref, device } = useCurrentDevice();
+  const isConnected = device.isOnline;
   const [currentPath, setCurrentPath] = useState("");
   const [search, setSearch] = useState("");
-  const { data: entries, isLoading, isError, error, refetch } = useFiles(currentPath);
+  const { data: entries, isLoading, isError, error, refetch } = useFiles(ref, currentPath, isConnected);
 
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split("/").filter(Boolean);
@@ -44,8 +44,8 @@ export function FilesPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-md">
-      <PageHeader title="Files" subtitle="Browse and download from the laptop" icon="folder" />
+    <div className="flex flex-col gap-md">
+      <PageHeader title="Files" subtitle={`Browse and download from ${device.name}`} icon="folder" />
 
       {/* Breadcrumb path */}
       <div className="flex items-center gap-xs overflow-x-auto">
@@ -127,7 +127,7 @@ export function FilesPage() {
                 <Icon name="chevron_right" size={18} className="shrink-0 text-on-surface-variant/50" />
               ) : (
                 <a
-                  href={fileApi.downloadUrl(currentPath ? `${currentPath}/${entry.name}` : entry.name)}
+                  href={fileApi.downloadUrl(ref, currentPath ? `${currentPath}/${entry.name}` : entry.name)}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
                   title="Download"
                   aria-label={`Download ${entry.name}`}

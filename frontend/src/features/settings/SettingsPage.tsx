@@ -1,38 +1,49 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { extractErrorMessage } from "@/api/client";
+import { organizationApi } from "@/api/organization.api";
+import { queryKeys } from "@/api/queryKeys";
 import { settingsApi } from "@/api/settings.api";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, PageHeader, SectionLabel, Segmented, StatusPill } from "@/components/ui/kit";
 import { useAuth } from "@/features/auth/useAuth";
+import { useCurrentOrg } from "@/features/org/useOrg";
 import { useTheme } from "@/lib/theme";
 import type { ThemeMode } from "@/lib/theme";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { ConnectTelegramDialog } from "./ConnectTelegramDialog";
 
-const INTEGRATIONS_QUERY_KEY = ["settings", "integrations"];
+const ROLE_LABEL = { OWNER: "Owner", ADMIN: "Admin", VIEWER: "Viewer" } as const;
 
 export function SettingsPage() {
   const { user, logout } = useAuth();
+  const { org, can } = useCurrentOrg();
+  const canManageSettings = can("settings:manage");
+  const integrationsKey = queryKeys.integrations(org.id);
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const queryClient = useQueryClient();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [connectTelegramOpen, setConnectTelegramOpen] = useState(false);
 
   const { data: integrations } = useQuery({
-    queryKey: INTEGRATIONS_QUERY_KEY,
-    queryFn: settingsApi.getIntegrationStatus,
+    queryKey: integrationsKey,
+    queryFn: () => settingsApi.getIntegrationStatus(org.id),
+  });
+  const { data: members } = useQuery({
+    queryKey: queryKeys.members(org.id),
+    queryFn: () => organizationApi.listMembers(org.id),
+    enabled: can("members:view"),
   });
   const telegramConnected = integrations?.telegram.connected ?? false;
 
   const disconnectMutation = useMutation({
-    mutationFn: () => settingsApi.disconnectTelegram(),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: INTEGRATIONS_QUERY_KEY }),
+    mutationFn: () => settingsApi.disconnectTelegram(org.id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
 
   function handleTelegramConnected(): void {
     setConnectTelegramOpen(false);
-    void queryClient.invalidateQueries({ queryKey: INTEGRATIONS_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: integrationsKey });
   }
 
   function handlePasswordChanged(): void {
@@ -42,7 +53,7 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-lg">
-      <PageHeader title="Settings" subtitle="Account, integrations, and appearance" icon="settings" />
+      <PageHeader title="Settings" subtitle={`Your account and ${org.name}`} icon="settings" />
 
       {/* Account */}
       <section className="flex flex-col gap-sm">
@@ -54,7 +65,9 @@ export function SettingsPage() {
             </div>
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-body-md text-on-surface">{user?.email}</span>
-              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Single administrator</span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+                {ROLE_LABEL[org.role]} of {org.name}
+              </span>
             </div>
           </div>
           <button
@@ -66,6 +79,38 @@ export function SettingsPage() {
             Change password
             <Icon name="chevron_right" size={18} className="ml-auto text-on-surface-variant" />
           </button>
+        </Card>
+      </section>
+
+      {/* Organization */}
+      <section className="flex flex-col gap-sm">
+        <SectionLabel trailing={<StatusPill tone="primary" label={ROLE_LABEL[org.role]} />}>Organization</SectionLabel>
+        <Card className="flex flex-col">
+          <div className="flex items-center gap-md p-md">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Icon name="apartment" size={22} />
+            </div>
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-body-md text-on-surface">{org.name}</span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+                {members ? `${members.length} member${members.length === 1 ? "" : "s"}` : org.slug}
+              </span>
+            </div>
+          </div>
+          {members && members.length > 0 && (
+            <div className="flex flex-col divide-y divide-outline-variant/60 border-t border-outline-variant">
+              {members.map((member) => (
+                <div key={member.userId} className="flex items-center gap-sm px-md py-sm">
+                  <Icon name="person" size={18} className="shrink-0 text-on-surface-variant" />
+                  <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">
+                    {member.name ?? member.email}
+                    {member.userId === user?.id && <span className="text-on-surface-variant"> (you)</span>}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">{ROLE_LABEL[member.role]}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </section>
 
@@ -83,7 +128,7 @@ export function SettingsPage() {
                 <StatusPill tone={telegramConnected ? "success" : "default"} label={telegramConnected ? "Connected" : "Not connected"} />
               </div>
             </div>
-            {telegramConnected ? (
+            {!canManageSettings ? null : telegramConnected ? (
               <Button variant="danger" disabled={disconnectMutation.isPending} onClick={() => disconnectMutation.mutate()}>
                 {disconnectMutation.isPending ? "…" : "Disconnect"}
               </Button>
@@ -134,11 +179,11 @@ export function SettingsPage() {
       <div className="flex items-center justify-center gap-sm pt-sm font-mono text-[10px] uppercase tracking-widest text-on-surface-variant/50">
         <span>Sentinel v0.1.0</span>
         <span>·</span>
-        <span>Personal instance</span>
+        <span>{org.name}</span>
       </div>
 
       <ChangePasswordDialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} onChanged={handlePasswordChanged} />
-      <ConnectTelegramDialog open={connectTelegramOpen} onClose={() => setConnectTelegramOpen(false)} onConnected={handleTelegramConnected} />
+      <ConnectTelegramDialog orgId={org.id} open={connectTelegramOpen} onClose={() => setConnectTelegramOpen(false)} onConnected={handleTelegramConnected} />
     </div>
   );
 }

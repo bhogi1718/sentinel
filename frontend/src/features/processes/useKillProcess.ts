@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { extractErrorMessage } from "@/api/client";
+import type { DeviceRef } from "@/api/paths";
 import { useSendCommand } from "@/features/device/useSendCommand";
 
 interface PendingKill {
@@ -11,9 +12,9 @@ interface PendingKill {
 /// process (pid + name) rather than a fixed whole-machine command type -
 /// kept separate since KILL_PROCESS's target changes per click instead of
 /// being one of a handful of static buttons.
-export function useKillProcess(onKilled?: () => void) {
+export function useKillProcess(ref: DeviceRef, onKilled?: () => void) {
   const [pending, setPending] = useState<PendingKill | null>(null);
-  const mutation = useSendCommand();
+  const mutation = useSendCommand(ref);
 
   function requestKill(pid: number, name: string): void {
     mutation.reset();

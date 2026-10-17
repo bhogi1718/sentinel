@@ -1,132 +1,107 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { extractErrorMessage } from "@/api/client";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { Icon } from "@/components/ui/Icon";
 import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
-import { Button, Card, SectionLabel, StateBlock, StatTile, StatusPill } from "@/components/ui/kit";
-import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
-import { useDeviceStatus } from "@/features/device/useDeviceStatus";
-import { useMetrics } from "@/features/device/useMetrics";
-import { useRemoteCommand } from "@/features/device/useRemoteCommand";
+import { Button, PageHeader, SectionLabel, StateBlock, StatTile, StatusPill } from "@/components/ui/kit";
+import { AddDeviceDialog } from "@/features/devices/AddDeviceDialog";
+import { DeviceCard } from "@/features/devices/DeviceCard";
+import { useDevices } from "@/features/devices/useDevices";
 import { EventRow } from "@/features/events/EventRow";
 import { useEvents } from "@/features/events/useEvents";
+import { useCan, useCurrentOrg } from "@/features/org/useOrg";
+import { routes } from "@/lib/routes";
 
-function pct(n: number | undefined | null): string {
-  return n === undefined || n === null || Number.isNaN(n) ? "—" : `${Math.round(n)}`;
+const DEVICES_SHOWN = 4;
+
+function ViewAll({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="font-mono text-[10px] uppercase tracking-wider text-primary transition-colors hover:text-primary/80"
+    >
+      View all
+    </button>
+  );
 }
 
+/// The organization's home: how many devices it has and how many are up,
+/// the devices themselves, and the latest activity across all of them.
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { data: device, isError: isDeviceError, error: deviceError, refetch: refetchDevice } = useDeviceStatus();
-  const isConnected = device?.isOnline ?? false;
-  const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(isConnected);
-  const { data: recentEvents, isLoading, isError: isEventsError, error: eventsError, refetch: refetchEvents } = useEvents({
-    pageSize: 5,
-  });
-  const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand();
-  const pendingCommand = pendingType ? REMOTE_COMMANDS[pendingType] : null;
+  const { org } = useCurrentOrg();
+  const canManageDevices = useCan("devices:manage");
+  const [addOpen, setAddOpen] = useState(false);
 
-  const memPct = metrics ? (metrics.memoryUsedBytes / metrics.memoryTotalBytes) * 100 : null;
-  const diskPct = metrics ? (metrics.diskUsedBytes / metrics.diskTotalBytes) * 100 : null;
+  const { data: devices, isLoading: devicesLoading, isError: devicesError, error: devicesErr, refetch: refetchDevices } = useDevices(org.id);
+  const { data: recentEvents, isLoading: eventsLoading, isError: eventsError, error: eventsErr, refetch: refetchEvents } = useEvents(org.id, {
+    pageSize: 6,
+  });
+
+  const total = devices?.length ?? 0;
+  const online = devices?.filter((device) => device.isOnline).length ?? 0;
+  const onlinePercent = total > 0 ? (online / total) * 100 : null;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-gutter">
-      {isDeviceError && (
-        <InlineErrorBanner message={`Device status: ${extractErrorMessage(deviceError)}`} onRetry={() => void refetchDevice()} />
-      )}
-      {isMetricsError && (
-        <InlineErrorBanner message={`Metrics: ${extractErrorMessage(metricsError)}`} onRetry={() => void refetchMetrics()} />
-      )}
+      <PageHeader
+        title={org.name}
+        subtitle="Overview of your devices and their activity"
+        icon="apartment"
+        trailing={<StatusPill tone="primary" label={org.role.toLowerCase()} />}
+      />
 
-      {/* Command deck: identity + live status + primary entry to control */}
-      <Card className="flex flex-col gap-md p-md">
-        <div className="flex items-start justify-between gap-md">
-          <div className="flex items-center gap-md">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Icon name="laptop_mac" size={26} />
-            </div>
-            <div className="flex flex-col gap-xs">
-              <h1 className="text-headline-lg-mobile font-semibold leading-none text-on-surface">Sentinel Device</h1>
-              <StatusPill
-                tone={isConnected ? "success" : "default"}
-                pulse={isConnected}
-                label={isConnected ? "Online" : "Awaiting agent"}
-              />
-            </div>
-          </div>
-          <Button variant="primary" icon="cast" onClick={() => navigate("/device")} className="hidden sm:inline-flex">
-            Live view
-          </Button>
-        </div>
+      <div className="grid grid-cols-2 gap-sm md:grid-cols-4">
+        <StatTile label="Devices" value={devices ? String(total) : "—"} icon="devices" />
+        <StatTile label="Online" value={devices ? String(online) : "—"} percent={onlinePercent} tone="success" icon="wifi" />
+        <StatTile label="Offline" value={devices ? String(total - online) : "—"} tone="default" icon="power_settings_new" />
+        <StatTile label="Events" value={recentEvents ? String(recentEvents.pagination.total) : "—"} icon="history" />
+      </div>
 
-        {/* Vitals strip */}
-        <div className="grid grid-cols-2 gap-sm md:grid-cols-4">
-          <StatTile label="CPU" value={pct(metrics?.cpuPercent)} unit="%" percent={metrics?.cpuPercent ?? null} tone="primary" icon="memory" />
-          <StatTile label="Memory" value={pct(memPct)} unit="%" percent={memPct} tone="primary" icon="memory_alt" />
-          <StatTile label="Storage" value={pct(diskPct)} unit="%" percent={diskPct} tone={diskPct && diskPct > 90 ? "danger" : "primary"} icon="folder" />
-          <StatTile
-            label="Power"
-            value={pct(metrics?.batteryPercent)}
-            unit="%"
-            percent={metrics?.batteryPercent ?? null}
-            tone={metrics?.batteryPercent != null && metrics.batteryPercent < 20 ? "warning" : "success"}
-            icon="battery_alert"
-          />
-        </div>
-      </Card>
-
-      {/* Remote control */}
       <section className="flex flex-col gap-sm">
-        <SectionLabel>Remote Control</SectionLabel>
-        <div className="grid grid-cols-3 gap-sm sm:grid-cols-5">
-          {Object.values(REMOTE_COMMANDS).map((command) => (
-            <Card
-              as="section"
-              key={command.type}
-              interactive
-              className="cursor-pointer"
-            >
-              <button
-                type="button"
-                disabled={!isConnected}
-                onClick={() => requestCommand(command.type)}
-                title={isConnected ? command.confirmTitle : "Device is offline"}
-                className="flex w-full flex-col items-center gap-xs px-sm py-md disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Icon name={command.icon} size={22} className={command.danger ? "text-error" : "text-on-surface-variant"} />
-                <span className={`font-mono text-[10px] uppercase tracking-wider ${command.danger ? "text-error" : "text-on-surface"}`}>
-                  {command.label}
-                </span>
-              </button>
-            </Card>
-          ))}
-        </div>
+        <SectionLabel trailing={total > DEVICES_SHOWN && <ViewAll onClick={() => navigate(routes.devices(org.id))} />}>
+          Devices
+        </SectionLabel>
+        {devicesError ? (
+          <InlineErrorBanner message={extractErrorMessage(devicesErr)} onRetry={() => void refetchDevices()} />
+        ) : devicesLoading ? (
+          <div className="grid grid-cols-1 gap-sm md:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="h-[76px] animate-pulse rounded-xl bg-surface-container-low" />
+            ))}
+          </div>
+        ) : devices && devices.length > 0 ? (
+          <div className="grid grid-cols-1 gap-sm md:grid-cols-2">
+            {devices.slice(0, DEVICES_SHOWN).map((device) => (
+              <DeviceCard key={device.id} device={device} />
+            ))}
+          </div>
+        ) : (
+          <StateBlock icon="devices" title="No devices yet">
+            {canManageDevices ? (
+              <div className="flex flex-col items-center gap-md">
+                <span>Add a laptop and install the agent to start monitoring it.</span>
+                <Button variant="primary" icon="add" onClick={() => setAddOpen(true)}>
+                  Add your first device
+                </Button>
+              </div>
+            ) : (
+              "An admin of this organization can add devices."
+            )}
+          </StateBlock>
+        )}
       </section>
 
-      {/* Recent activity */}
       <section className="flex flex-col gap-sm">
-        <SectionLabel
-          trailing={
-            <button
-              type="button"
-              onClick={() => navigate("/events")}
-              className="font-mono text-[10px] uppercase tracking-wider text-primary transition-colors hover:text-primary/80"
-            >
-              View all
-            </button>
-          }
-        >
-          Recent Activity
-        </SectionLabel>
-
-        {isLoading ? (
+        <SectionLabel trailing={<ViewAll onClick={() => navigate(routes.events(org.id))} />}>Recent Activity</SectionLabel>
+        {eventsError ? (
+          <InlineErrorBanner message={extractErrorMessage(eventsErr)} onRetry={() => void refetchEvents()} />
+        ) : eventsLoading ? (
           <div className="flex flex-col gap-xs">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-16 animate-pulse rounded-lg bg-surface-container-low" />
             ))}
           </div>
-        ) : isEventsError ? (
-          <InlineErrorBanner message={extractErrorMessage(eventsError)} onRetry={() => void refetchEvents()} />
         ) : recentEvents && recentEvents.items.length > 0 ? (
           <div className="flex flex-col gap-xs">
             {recentEvents.items.map((event) => (
@@ -135,23 +110,12 @@ export function DashboardPage() {
           </div>
         ) : (
           <StateBlock icon="history" title="No events recorded yet">
-            System events will appear here as the agent reports them.
+            Boots, locks, sleeps and network changes appear here as agents report them.
           </StateBlock>
         )}
       </section>
 
-      <ConfirmDialog
-        open={pendingCommand !== null}
-        title={pendingCommand?.confirmTitle ?? ""}
-        description={pendingCommand?.confirmDescription ?? ""}
-        confirmLabel={pendingCommand?.label ?? "Confirm"}
-        icon={pendingCommand?.icon ?? "lock"}
-        danger={pendingCommand?.danger}
-        isConfirming={isSending}
-        errorMessage={errorMessage}
-        onConfirm={confirm}
-        onCancel={cancel}
-      />
+      {canManageDevices && <AddDeviceDialog orgId={org.id} open={addOpen} onClose={() => setAddOpen(false)} />}
     </div>
   );
 }

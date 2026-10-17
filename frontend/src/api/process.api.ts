@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import { devicePath, type DeviceRef } from "./paths";
 
 export interface ProcessInfo {
   pid: number;
@@ -9,8 +10,8 @@ export interface ProcessInfo {
 }
 
 export const processApi = {
-  async list(): Promise<ProcessInfo[]> {
-    const response = await apiClient.get<{ success: true; data: ProcessInfo[] }>("/device/processes");
+  async list(ref: DeviceRef): Promise<ProcessInfo[]> {
+    const response = await apiClient.get<{ success: true; data: ProcessInfo[] }>(`${devicePath(ref)}/processes`);
     return response.data.data;
   },
 };

@@ -6,6 +6,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { extractErrorMessage } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input } from "@/components/ui/kit";
+import { routes } from "@/lib/routes";
 import { loginSchema } from "./loginSchema";
 import type { LoginFormValues } from "./loginSchema";
 import { useAuth } from "./useAuth";
@@ -24,7 +25,7 @@ export function LoginPage() {
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
 
   if (isAuthenticated) {
-    const redirectTo = (location.state as { from?: string } | null)?.from ?? "/dashboard";
+    const redirectTo = (location.state as { from?: string } | null)?.from ?? routes.root;
     return <Navigate to={redirectTo} replace />;
   }
 
@@ -115,7 +116,7 @@ export function LoginPage() {
         </Card>
 
         <p className="mt-md text-center font-mono text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/50">
-          Single-owner · encrypted end-to-end
+          Role-based access · Per-organization isolation
         </p>
       </motion.div>
     </div>

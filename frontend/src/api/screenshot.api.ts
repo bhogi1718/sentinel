@@ -1,5 +1,6 @@
 import axios from "axios";
 import { apiClient } from "./client";
+import { devicePath, type DeviceRef } from "./paths";
 
 export const screenshotApi = {
   /// The backend sends the PNG straight through as the response body
@@ -11,9 +12,9 @@ export const screenshotApi = {
   /// arrives as an opaque Blob rather than a parsed object. Re-parsed back
   /// into a normal axios-shaped error here so extractErrorMessage (which
   /// expects error.response.data.error.message) keeps working unmodified.
-  async capture(): Promise<Blob> {
+  async capture(ref: DeviceRef): Promise<Blob> {
     try {
-      const response = await apiClient.post<Blob>("/device/screenshot", undefined, { responseType: "blob" });
+      const response = await apiClient.post<Blob>(`${devicePath(ref)}/screenshot`, undefined, { responseType: "blob" });
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
