@@ -3,6 +3,7 @@ import { asyncHandler } from "../../common/asyncHandler";
 import { authGuard } from "../../middleware/authGuard";
 import { orgContext } from "../../middleware/orgContext";
 import { requirePermission } from "../../middleware/requirePermission";
+import { auditRouter } from "../audit/audit.routes";
 import { deviceRouter, fileDownloadRouter } from "../device/device.routes";
 import { eventRouter } from "../event/event.routes";
 import { settingsRouter } from "../settings/settings.routes";
@@ -26,5 +27,6 @@ orgScopedRouter.get("/members", requirePermission("members:view"), asyncHandler(
 orgScopedRouter.use("/devices", deviceRouter);
 orgScopedRouter.use("/events", eventRouter);
 orgScopedRouter.use("/settings", settingsRouter);
+orgScopedRouter.use("/audit", auditRouter);
 
 organizationRouter.use("/:orgId", authGuard, orgContext, orgScopedRouter);

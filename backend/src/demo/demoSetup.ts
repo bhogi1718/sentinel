@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { auditRepository } from "../modules/audit/audit.repository";
 import { deviceService } from "../modules/device/device.service";
 import { prisma } from "../prisma/client";
 
@@ -62,6 +63,7 @@ export async function pruneDemoHistory(orgId: string): Promise<void> {
   const cutoff = new Date(Date.now() - DEMO_HISTORY_DAYS * 86_400_000);
   await prisma.event.deleteMany({ where: { orgId, occurredAt: { lt: cutoff } } });
   await prisma.command.deleteMany({ where: { orgId, requestedAt: { lt: cutoff } } });
+  await auditRepository.deleteOlderThan(cutoff, orgId);
   await prisma.refreshToken.deleteMany({
     where: { user: { email: DEMO_USER.email }, OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }] },
   });

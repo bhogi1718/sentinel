@@ -20,6 +20,9 @@ vi.mock("../modules/device/device.repository", () => ({
     findInOrg: vi.fn(),
   },
 }));
+vi.mock("../modules/audit/audit.repository", () => ({
+  auditRepository: { create: vi.fn() },
+}));
 
 import { deviceRepository } from "../modules/device/device.repository";
 import { deviceService } from "../modules/device/device.service";
