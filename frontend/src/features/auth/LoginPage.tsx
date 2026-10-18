@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { extractErrorMessage } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input } from "@/components/ui/kit";
@@ -50,7 +50,7 @@ export function LoginPage() {
         className="w-full max-w-sm"
       >
         {/* Brand */}
-        <div className="mb-lg flex flex-col items-center gap-sm text-center">
+        <Link to={routes.home} aria-label="Back to the Sentinel home page" className="mb-lg flex flex-col items-center gap-sm text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-primary">
             <Icon name="security" size={28} />
           </div>
@@ -58,7 +58,7 @@ export function LoginPage() {
             <h1 className="text-display font-semibold tracking-tight text-on-surface">Sentinel</h1>
             <p className="font-mono text-label-mono uppercase tracking-[0.25em] text-primary">Console Access</p>
           </div>
-        </div>
+        </Link>
 
         <Card className="p-md">
           <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex flex-col gap-md" noValidate>
