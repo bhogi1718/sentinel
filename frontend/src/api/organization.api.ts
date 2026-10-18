@@ -49,6 +49,21 @@ export const organizationApi = {
     return response.data.data;
   },
 
+  /// Creates an organization with the caller as its Owner.
+  async create(name: string): Promise<Organization> {
+    const response = await apiClient.post<{ success: true; data: Organization }>("/orgs", { name });
+    return response.data.data;
+  },
+
+  async changeMemberRole(orgId: string, userId: string, role: OrgRole): Promise<void> {
+    await apiClient.patch(`${orgPath(orgId)}/members/${encodeURIComponent(userId)}`, { role });
+  },
+
+  /// Removes a member - or, with the caller's own id, leaves.
+  async removeMember(orgId: string, userId: string): Promise<void> {
+    await apiClient.delete(`${orgPath(orgId)}/members/${encodeURIComponent(userId)}`);
+  },
+
   async listMembers(orgId: string): Promise<OrganizationMember[]> {
     const response = await apiClient.get<{ success: true; data: OrganizationMember[] }>(`${orgPath(orgId)}/members`);
     return response.data.data;

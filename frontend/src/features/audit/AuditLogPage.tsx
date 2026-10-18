@@ -29,7 +29,8 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
   const detail = auditDetail(entry);
   const error = failed && typeof entry.detail?.error === "string" ? entry.detail.error : null;
   const actor = auditActorLabel(entry);
-  const device = entry.deviceName ?? "Unknown device";
+  // Membership entries are about the organization itself, not a device.
+  const device = entry.deviceId ? (entry.deviceName ?? "Unknown device") : "Organization";
 
   return (
     <li className="flex gap-sm px-md py-sm md:grid md:grid-cols-[minmax(0,1fr)_11rem_10rem_8rem] md:items-center md:gap-md">
@@ -121,7 +122,7 @@ export function AuditLogPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-md">
       <PageHeader
         title="Audit log"
-        subtitle={`Screenshots, live views, file access and remote commands in ${org.name} · kept ${AUDIT_RETENTION_DAYS} days`}
+        subtitle={`Device access, remote commands and membership changes in ${org.name} · kept ${AUDIT_RETENTION_DAYS} days`}
         icon="policy"
       />
 
@@ -226,7 +227,7 @@ export function AuditLogPage() {
         </StateBlock>
       ) : (
         <StateBlock icon="policy" title="Nothing recorded yet">
-          Screenshots, live views, file access and remote commands on this organization's devices will appear here.
+          Screenshots, live views, file access, remote commands and membership changes will appear here.
         </StateBlock>
       )}
 

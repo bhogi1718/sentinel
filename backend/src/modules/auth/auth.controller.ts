@@ -2,9 +2,14 @@ import { Request, Response } from "express";
 import { ApiError } from "../../common/ApiError";
 import { sendSuccess } from "../../common/ApiResponse";
 import { authService } from "./auth.service";
-import { ChangePasswordInput, LoginInput, RefreshInput } from "./auth.validation";
+import { ChangePasswordInput, LoginInput, RefreshInput, SignupInput } from "./auth.validation";
 
 export const authController = {
+  async signup(req: Request, res: Response): Promise<void> {
+    const tokens = await authService.signup(req.body as SignupInput);
+    sendSuccess(res, tokens, 201);
+  },
+
   async login(req: Request, res: Response): Promise<void> {
     const { email, password } = req.body as LoginInput;
     const tokens = await authService.login(email, password);

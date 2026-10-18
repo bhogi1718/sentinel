@@ -1,8 +1,32 @@
 import { prisma } from "../../prisma/client";
 
 export const authRepository = {
-  findUserByEmail(email: string) {
-    return prisma.user.findUnique({ where: { email } });
+  /// Emails match regardless of case. New accounts are stored in lowercase,
+  /// but older ones may not be, so an exact match is tried first.
+  async findUserByEmail(email: string) {
+    return (
+      (await prisma.user.findUnique({ where: { email } })) ??
+      prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })
+    );
+  },
+
+  /// A new account and its first organization, with the account as Owner -
+  /// one nested write, so it all exists or none of it does.
+  createUserWithOrganization(params: {
+    email: string;
+    name: string;
+    passwordHash: string;
+    organization: { name: string; slug: string };
+  }) {
+    return prisma.user.create({
+      data: {
+        email: params.email,
+        name: params.name,
+        passwordHash: params.passwordHash,
+        memberships: { create: { role: "OWNER", org: { create: params.organization } } },
+      },
+      select: { id: true, email: true },
+    });
   },
 
   findUserById(id: string) {

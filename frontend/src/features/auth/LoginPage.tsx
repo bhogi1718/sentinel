@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input } from "@/components/ui/kit";
 import { routes } from "@/lib/routes";
 import { loginSchema } from "./loginSchema";
+import { PasswordInput } from "./PasswordInput";
 import type { LoginFormValues } from "./loginSchema";
 import { useAuth } from "./useAuth";
 import { useTryDemo } from "./useTryDemo";
@@ -17,7 +18,6 @@ export function LoginPage() {
   const demo = useTryDemo();
   const location = useLocation();
   const [formError, setFormError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState<"idle" | "success">("idle");
 
   const {
@@ -74,27 +74,7 @@ export function LoginPage() {
               <label htmlFor="password" className="ml-0.5 font-mono text-label-mono uppercase text-on-surface-variant">
                 Password
               </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">
-                  <Icon name="lock" size={18} />
-                </span>
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="w-full rounded-lg border border-outline-variant bg-surface-container py-2.5 pl-10 pr-10 text-body-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/60 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
-                  {...register("password")}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant transition-colors hover:text-on-surface"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  <Icon name={showPassword ? "visibility_off" : "visibility"} size={18} />
-                </button>
-              </div>
+              <PasswordInput id="password" autoComplete="current-password" {...register("password")} />
               {errors.password && <p className="text-body-sm text-error">{errors.password.message}</p>}
             </div>
 
@@ -116,6 +96,13 @@ export function LoginPage() {
             </Button>
           </form>
         </Card>
+
+        <p className="mt-md text-center text-body-sm text-on-surface-variant">
+          New to Sentinel?{" "}
+          <Link to={routes.signup} className="text-primary underline-offset-4 hover:underline">
+            Create an account
+          </Link>
+        </p>
 
         {demo.enabled && (
           <Card className="mt-md flex flex-col items-center gap-sm p-md text-center">

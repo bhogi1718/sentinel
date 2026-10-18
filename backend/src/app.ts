@@ -6,6 +6,7 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalRateLimiter } from "./middleware/rateLimiter";
 import { authRouter } from "./modules/auth/auth.routes";
 import { demoRouter } from "./modules/demo/demo.routes";
+import { publicInvitationRouter } from "./modules/invitation/invitation.routes";
 import { organizationRouter } from "./modules/organization/organization.routes";
 import { sendSuccess } from "./common/ApiResponse";
 
@@ -33,6 +34,7 @@ export function createApp(): Application {
 
   app.use("/api/auth", authRouter);
   app.use("/api/demo", demoRouter);
+  app.use("/api/invites", publicInvitationRouter);
   // Every device, event and settings route lives under /api/orgs/:orgId.
   app.use("/api/orgs", organizationRouter);
 

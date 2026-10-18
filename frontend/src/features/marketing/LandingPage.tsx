@@ -137,29 +137,29 @@ export function LandingPage() {
             strictly to itself.
           </p>
           <div className="flex flex-wrap gap-3">
+            <Link
+              to={isAuthenticated ? routes.app : routes.signup}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 font-mono text-label-mono uppercase tracking-wider text-on-primary transition-colors hover:bg-primary/90"
+            >
+              {isAuthenticated ? "Open console" : "Get started free"}
+              <Icon name="arrow_forward" size={16} />
+            </Link>
             {demo.enabled && (
               <button
                 type="button"
                 onClick={() => void demo.start()}
                 disabled={demo.starting}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 font-mono text-label-mono uppercase tracking-wider text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container px-5 py-3 font-mono text-label-mono uppercase tracking-wider text-on-surface transition-colors hover:bg-surface-container-high disabled:opacity-60"
               >
                 <Icon name="play_arrow" size={18} />
                 {demo.starting ? "Starting demo…" : "Try the live demo"}
               </button>
             )}
-            <Link
-              to={isAuthenticated ? routes.app : routes.login}
-              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container px-5 py-3 font-mono text-label-mono uppercase tracking-wider text-on-surface transition-colors hover:bg-surface-container-high"
-            >
-              {isAuthenticated ? "Open console" : "Sign in"}
-              <Icon name="arrow_forward" size={16} />
-            </Link>
           </div>
           {demo.error && <p className="text-body-sm text-error">{demo.error}</p>}
-          {demo.enabled && (
-            <p className="text-body-sm text-on-surface-variant">No account needed. The demo laptop is simulated.</p>
-          )}
+          <p className="text-body-sm text-on-surface-variant">
+            Free for up to two laptops.{demo.enabled && " Or try the demo first - no account needed, the laptop is simulated."}
+          </p>
         </div>
         <ProductPreview />
       </section>

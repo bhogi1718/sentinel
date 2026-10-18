@@ -56,14 +56,27 @@ function Header() {
             GitHub
           </a>
           <ThemeToggle />
-          {!isLoading && (
-            <Link
-              to={isAuthenticated ? routes.app : routes.login}
-              className="ml-1 rounded-lg bg-primary px-4 py-2 font-mono text-label-mono uppercase tracking-wider text-on-primary transition-colors hover:bg-primary/90"
-            >
-              {isAuthenticated ? "Open console" : "Sign in"}
-            </Link>
-          )}
+          {!isLoading &&
+            (isAuthenticated ? (
+              <Link
+                to={routes.app}
+                className="ml-1 rounded-lg bg-primary px-4 py-2 font-mono text-label-mono uppercase tracking-wider text-on-primary transition-colors hover:bg-primary/90"
+              >
+                Open console
+              </Link>
+            ) : (
+              <>
+                <Link to={routes.login} className="rounded-lg px-3 py-2 text-on-surface-variant hover:text-on-surface">
+                  Sign in
+                </Link>
+                <Link
+                  to={routes.signup}
+                  className="ml-1 whitespace-nowrap rounded-lg bg-primary px-4 py-2 font-mono text-label-mono uppercase tracking-wider text-on-primary transition-colors hover:bg-primary/90"
+                >
+                  Sign up
+                </Link>
+              </>
+            ))}
         </nav>
       </div>
     </header>

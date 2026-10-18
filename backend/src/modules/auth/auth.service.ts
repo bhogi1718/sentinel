@@ -1,15 +1,16 @@
+import { Prisma } from "@prisma/client";
+import { hashToken } from "../../common/hashToken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { env } from "../../config/env";
 import { isDemoUser } from "../../demo/demoSetup";
 import { ApiError } from "../../common/ApiError";
+import { invitationService } from "../invitation/invitation.service";
+import { organizationSlug } from "../organization/organization.slug";
 import { authRepository } from "./auth.repository";
 import { AuthenticatedUser, AuthTokens, JwtAccessPayload, JwtRefreshPayload } from "./auth.types";
-
-function hashToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
+import { SignupInput } from "./auth.validation";
 
 function parseExpiryToDate(expiresIn: string): Date {
   const match = /^(\d+)([smhd])$/.exec(expiresIn);
@@ -76,6 +77,43 @@ async function issueRefreshToken(userId: string): Promise<string> {
 }
 
 export const authService = {
+  /// Creates an account and signs them in. The account gets its own first
+  /// organization, as its Owner - or, signing up from an invite link, joins
+  /// that organization instead. The email isn't verified (there's no
+  /// outbound email), so it serves only as the login name.
+  async signup(input: SignupInput): Promise<AuthTokens> {
+    if (isDemoUser(input.email)) {
+      throw ApiError.conflict("An account with this email already exists");
+    }
+    if (await authRepository.findUserByEmail(input.email)) {
+      throw ApiError.conflict("An account with this email already exists");
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, BCRYPT_COST);
+    const organizationName = input.organizationName ?? `${input.name}'s organization`;
+
+    let user: AuthenticatedUser;
+    try {
+      user = input.inviteToken
+        ? await invitationService.acceptWithNewAccount(input.inviteToken, { email: input.email, name: input.name, passwordHash })
+        : await authRepository.createUserWithOrganization({
+            email: input.email,
+            name: input.name,
+            passwordHash,
+            organization: { name: organizationName, slug: organizationSlug(organizationName) },
+          });
+    } catch (err) {
+      // Two sign-ups with the same email at once: the second loses on the
+      // unique constraint.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw ApiError.conflict("An account with this email already exists");
+      }
+      throw err;
+    }
+
+    return authService.issueSession(user);
+  },
+
   async login(email: string, password: string): Promise<AuthTokens> {
     const user = await authRepository.findUserByEmail(email);
     if (!user) {
