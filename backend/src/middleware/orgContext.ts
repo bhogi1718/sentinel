@@ -18,6 +18,12 @@ export const orgContext = asyncHandler(async (req, _res, next) => {
   const membership = await organizationRepository.findMembership(user.id, orgId);
   if (!membership) throw ApiError.notFound("Organization not found");
 
-  req.org = { id: orgId, name: membership.org.name, slug: membership.org.slug, role: membership.role };
+  req.org = {
+    id: orgId,
+    name: membership.org.name,
+    slug: membership.org.slug,
+    isDemo: membership.org.isDemo,
+    role: membership.role,
+  };
   next();
 });

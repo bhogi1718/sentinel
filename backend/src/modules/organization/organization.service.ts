@@ -4,10 +4,17 @@ import { organizationRepository } from "./organization.repository";
 import { OrgContext, OrganizationForMember, OrganizationMember } from "./organization.types";
 
 function toOrganizationForMember(
-  org: { id: string; name: string; slug: string },
+  org: { id: string; name: string; slug: string; isDemo: boolean },
   role: OrgRole,
 ): OrganizationForMember {
-  return { id: org.id, name: org.name, slug: org.slug, role, permissions: permissionsFor(role) };
+  return {
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    isDemo: org.isDemo,
+    role,
+    permissions: permissionsFor(role, { isDemo: org.isDemo }),
+  };
 }
 
 export const organizationService = {

@@ -44,6 +44,16 @@ export const downloadRateLimiter = rateLimit({
   handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many downloads requested, try again later")),
 });
 
+// Each demo session issues a refresh token; capped so the shared demo
+// can't be used to fill the database.
+export const demoSessionRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 20 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many demo sessions started, try again later")),
+});
+
 // Each capture round-trips through GDI + PNG encoding on the agent side
 // (via the per-session helper) and produces a multi-hundred-KB-to-few-MB
 // payload - capped tighter than general traffic for the same resource-cost

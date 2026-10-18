@@ -21,6 +21,14 @@ const envSchema = z.object({
   ADMIN_PASSWORD: z.string().min(8).optional(),
 
   DEVICE_NAME: z.string().min(1).optional(),
+
+  // Public demo (see docs/architecture/demo-mode.md): runs a simulated
+  // device inside this process and lets anyone open a demo session. Off
+  // unless explicitly enabled.
+  DEMO_MODE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 function loadEnv() {

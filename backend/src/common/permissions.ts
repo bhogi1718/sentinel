@@ -37,10 +37,23 @@ export type Permission = keyof typeof PERMISSIONS;
 
 const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
-export function can(role: OrgRole, permission: Permission): boolean {
+/// Actions no one may take in the public demo organization, whatever their
+/// role: each would change the demo for every other visitor (adding a
+/// device would even let a visitor connect a real agent and show its
+/// screen to everyone). See docs/architecture/demo-mode.md.
+const DEMO_RESTRICTED = new Set<Permission>(["devices:manage", "settings:manage", "members:manage", "org:manage"]);
+
+/// Where the permission is being exercised. Only the demo organization
+/// narrows what a role allows.
+export interface PermissionScope {
+  isDemo?: boolean;
+}
+
+export function can(role: OrgRole, permission: Permission, scope: PermissionScope = {}): boolean {
+  if (scope.isDemo && DEMO_RESTRICTED.has(permission)) return false;
   return ROLE_RANK[role] >= ROLE_RANK[PERMISSIONS[permission]];
 }
 
-export function permissionsFor(role: OrgRole): Permission[] {
-  return ALL_PERMISSIONS.filter((permission) => can(role, permission));
+export function permissionsFor(role: OrgRole, scope: PermissionScope = {}): Permission[] {
+  return ALL_PERMISSIONS.filter((permission) => can(role, permission, scope));
 }

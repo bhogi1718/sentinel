@@ -28,6 +28,8 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  /// The public demo organization: its devices are simulated.
+  isDemo: boolean;
   role: OrgRole;
   permissions: Permission[];
 }
