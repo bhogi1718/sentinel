@@ -20,9 +20,6 @@ reach the agent's pipes.
 
 These are tracked in [PRODUCT_AUDIT.md](PRODUCT_AUDIT.md) and not yet fixed:
 
-- The agent's helper pipe is created without its intended restricted access
-  control list (audit H8), so other interactive users on the laptop may be
-  able to reach it.
 - Dependency advisories in the backend's install-time tooling (audit M1).
 - Refresh tokens are stored in browser local storage (audit H2).
 

@@ -16,14 +16,55 @@ use windows::Win32::Security::SECURITY_ATTRIBUTES;
 /// client reaching out to it.
 pub const PIPE_NAME: &str = r"\\.\pipe\SentinelAgentHelper";
 
-/// Windows' default pipe DACL grants access to any authenticated local
-/// user, wider than needed - the pipe only needs to be reachable by SYSTEM
-/// (the service, which connects in as a client) and the INTERACTIVE
-/// well-known group (the helper, which creates/owns the pipe server as
-/// whoever is interactively logged in). GA (Generic All) rather than a
-/// narrower right because both ends need read+write+FILE_CREATE_PIPE_INSTANCE
-/// for reconnect.
-pub const PIPE_SECURITY_DESCRIPTOR_SDDL: &str = "D:(A;;GA;;;SY)(A;;GA;;;IU)";
+/// The pipe's access list: SYSTEM (the service, which connects in as a
+/// client) and the user this helper runs as. Built per process by
+/// `pipe_sddl`, so no other account - including other users signed in on
+/// the same machine - can connect. Granting the whole Interactive group
+/// instead would let every interactively logged-on user request
+/// screenshots and live frames. GA (Generic All) rather than a narrower
+/// right because both ends need read+write+FILE_CREATE_PIPE_INSTANCE for
+/// reconnect.
+pub fn pipe_sddl(owner_sid: &str) -> String {
+    format!("D:(A;;GA;;;SY)(A;;GA;;;{owner_sid})")
+}
+
+/// The SID of the account this process runs as, in its string form
+/// (for example `S-1-5-21-...`).
+pub fn current_user_sid_string() -> windows::core::Result<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
+    use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    unsafe {
+        let mut token = HANDLE::default();
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token)?;
+
+        // The first call only reports how much room the answer needs.
+        // Buffer is word-aligned because it is read as a TOKEN_USER.
+        let mut needed = 0u32;
+        let _ = GetTokenInformation(token, TokenUser, None, 0, &mut needed);
+        let words = (needed as usize).div_ceil(std::mem::size_of::<usize>());
+        let mut buffer = vec![0usize; words];
+        let result = GetTokenInformation(
+            token,
+            TokenUser,
+            Some(buffer.as_mut_ptr().cast()),
+            needed,
+            &mut needed,
+        );
+        let _ = CloseHandle(token);
+        result?;
+
+        let user = &*(buffer.as_ptr() as *const TOKEN_USER);
+        let mut sid_wide = PWSTR::null();
+        ConvertSidToStringSidW(user.User.Sid, &mut sid_wide)?;
+        let text = sid_wide.to_string();
+        let _ = LocalFree(HLOCAL(sid_wide.0.cast()));
+        text.map_err(|_| windows::core::Error::from_win32())
+    }
+}
 
 /// Builds the win32 security attributes for
 /// `create_with_security_attributes_raw`, scoped to
@@ -40,7 +81,8 @@ impl PipeSecurityAttributes {
         use windows::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
         use windows::Win32::Security::PSECURITY_DESCRIPTOR;
 
-        let sddl_wide: Vec<u16> = PIPE_SECURITY_DESCRIPTOR_SDDL
+        let sddl = pipe_sddl(&current_user_sid_string()?);
+        let sddl_wide: Vec<u16> = sddl
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
@@ -215,6 +257,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pipe_access_is_limited_to_system_and_the_owner() {
+        let sddl = pipe_sddl("S-1-5-21-1-2-3-1001");
+        assert_eq!(sddl, "D:(A;;GA;;;SY)(A;;GA;;;S-1-5-21-1-2-3-1001)");
+        assert!(!sddl.contains(";IU)"), "the Interactive group must not be granted access");
+    }
+
+    #[test]
+    fn the_current_user_sid_is_read_and_the_descriptor_builds() {
+        let sid = current_user_sid_string().expect("read current user SID");
+        assert!(sid.starts_with("S-1-5-"), "unexpected SID format: {sid}");
+        assert!(PipeSecurityAttributes::build().is_ok(), "pipe descriptor should build for this user");
+    }
 
     #[test]
     fn run_with_timeout_returns_the_result_when_the_closure_finishes_in_time() {
