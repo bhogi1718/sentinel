@@ -8,8 +8,10 @@ export function ProtectedRoute() {
 
   if (isLoading) return <FullPageSpinner />;
 
+  // Signed-out visitors arriving at any console address see the public
+  // landing page first; from there they can sign in.
   if (!isAuthenticated) {
-    return <Navigate to={routes.login} replace />;
+    return <Navigate to={routes.home} replace />;
   }
 
   return <Outlet />;
