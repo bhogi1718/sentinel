@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/bhogi1718/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/bhogi1718/sentinel/actions/workflows/ci.yml)
 
+![Sentinel landing page](docs/images/landing.png)
+
+**Try it:** [sentinel-pied-five.vercel.app](https://sentinel-pied-five.vercel.app/) - click **Try the live demo** for a simulated laptop, no account needed.
+
 A multi-tenant remote monitoring and control platform for Windows laptops. Organizations own their devices, members have roles, and nothing is ever visible across organizations.
 
 A **Rust agent** runs as a Windows Service and streams live system state to a **Node/Express backend** over Socket.IO. A **React dashboard** lets members check on their organization's laptops, watch their screens live, and send commands from anywhere.
