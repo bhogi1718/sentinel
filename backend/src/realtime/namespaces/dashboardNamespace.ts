@@ -63,6 +63,18 @@ async function applyRoles(socket: DashboardSocket, roles: Map<string, OrgRole>):
   }
 }
 
+/// Closes every open dashboard connection of one user. Used when the user's
+/// sessions are revoked: their live views end with the connection.
+export function disconnectDashboardSockets(userId: string): void {
+  if (!dashboardNamespace) return;
+  for (const socket of dashboardNamespace.sockets.values() as Iterable<DashboardSocket>) {
+    if (socket.user?.id === userId) {
+      logger.info(`Disconnecting dashboard ${socket.user.email}: session revoked`);
+      socket.disconnect(true);
+    }
+  }
+}
+
 /// Re-checks the memberships of every connected dashboard socket - or only
 /// one user's, when a caller knows whose membership just changed. Users with
 /// several open tabs are looked up once.
