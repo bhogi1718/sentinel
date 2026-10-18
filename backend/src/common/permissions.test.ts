@@ -8,6 +8,7 @@ const DEVICE_CONTROL: Permission[] = [
   "commands:send",
   "devices:manage",
   "settings:manage",
+  "audit:view",
 ];
 const OWNER_ONLY: Permission[] = ["members:manage", "org:manage"];
 
@@ -34,7 +35,7 @@ describe("can", () => {
 describe("the demo organization", () => {
   it("lets demo visitors try devices, but never change the shared demo", () => {
     const scope = { isDemo: true };
-    for (const permission of [...READ_ONLY, "files:access", "screen:view", "commands:send"] as Permission[]) {
+    for (const permission of [...READ_ONLY, "files:access", "screen:view", "commands:send", "audit:view"] as Permission[]) {
       expect(can("OWNER", permission, scope)).toBe(true);
     }
     for (const permission of ["devices:manage", "settings:manage", "members:manage", "org:manage"] as Permission[]) {

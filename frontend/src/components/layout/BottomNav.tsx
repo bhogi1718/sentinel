@@ -3,14 +3,14 @@ import { Icon } from "@/components/ui/Icon";
 import { useCurrentOrg } from "@/features/org/useOrg";
 import { navItemsFor } from "./navItems";
 
-/// Mobile tab bar - the same four destinations as the desktop sidebar.
+/// Mobile tab bar - the same destinations as the desktop sidebar.
 export function BottomNav() {
-  const { org } = useCurrentOrg();
+  const { org, can } = useCurrentOrg();
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 pb-safe bg-surface-container-high/90 backdrop-blur-xl md:hidden">
       <div className="flex h-16 items-center justify-between px-xs">
-        {navItemsFor(org.id).map(({ to, shortLabel, icon, end }) => (
+        {navItemsFor(org.id, can).map(({ to, shortLabel, icon, end }) => (
           <NavLink
             key={to}
             to={to}

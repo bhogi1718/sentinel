@@ -23,6 +23,7 @@ A **Rust agent** runs as a Windows Service and streams live system state to a **
 - **Organizations and roles:** every device, event and command belongs to an organization. Members are Owners, Admins or Viewers: viewers can look, admins can also use files, screenshots, the live view and remote commands. A user can belong to several organizations and switch between them.
 - **Isolation:** every API route is scoped to `/api/orgs/:orgId`, realtime updates are delivered per organization, and agent replies are accepted only from the device that was asked. A real-database test suite proves it ([architecture](docs/architecture/multi-tenant-core.md)).
 - **Command history:** every remote command records who sent it and how it ended.
+- **Audit log:** owners and admins can see every screenshot, live view, file access and remote command - who, which device, when, and whether it worked - for 90 days. Entries can't be edited, even in the database ([how it works](docs/architecture/audit-log.md)).
 - **Live demo:** with `DEMO_MODE=true`, a simulated laptop runs inside the backend and a **Try the demo** button lets anyone explore the dashboard without an account ([how it works](docs/architecture/demo-mode.md)).
 - **Auth:** JWT login with refresh tokens. There is no sign-up or password-reset flow yet: accounts are created with the seed script.
 - **Runs as a Windows Service:** the agent starts on boot and reconnects on its own if the backend drops
@@ -38,6 +39,7 @@ The dashboard uses a calm, instrument-panel look called **Console**: deep ink wi
 | Events | Vertical timeline grouped by day, with search and type filters |
 | Files | Breadcrumb navigation, search, folders first, per-file download |
 | Processes | Search, Apps / Background filter, per-process CPU bars, kill with confirmation |
+| Audit log | Who took screenshots, watched, opened files or sent commands, with filters by action, person, device and date (Owners and Admins) |
 | Settings | Account, Telegram integration, appearance (theme), session |
 
 The live deployment on Vercel is the instance the laptop agent actually reports to. `http://localhost:5173` (from `npm run dev` in `frontend/`) is a separate local environment pointed at a **local** backend on port 5000, so it shows "Device is not currently connected" unless you're running the agent against it.

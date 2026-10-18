@@ -20,6 +20,7 @@ model User {
   refreshTokens     RefreshToken[]
   memberships       Membership[]
   requestedCommands Command[]
+  auditEvents       AuditEvent[]
 
   @@map("users")
 }
@@ -64,6 +65,7 @@ model Organization {
   memberships Membership[]
   devices     Device[]
   settings    OrganizationSettings?
+  auditEvents AuditEvent[]
 
   @@map("organizations")
 }
@@ -194,4 +196,50 @@ model Command {
   @@index([deviceId, requestedAt])
   @@index([orgId, requestedAt])
   @@map("commands")
+}
+
+/// The sensitive actions a member can take on a device - each one exposes
+/// the device owner's private data or changes the machine.
+enum AuditAction {
+  SCREENSHOT_CAPTURED
+  LIVE_VIEW_STARTED
+  LIVE_VIEW_ENDED
+  FILES_LISTED
+  FILE_DOWNLOADED
+  COMMAND_SENT
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+/// Who did what to which device, and whether it worked: the record an
+/// organization's owners and admins review. Append-only - the database
+/// rejects any UPDATE (see the migration), and rows are only ever deleted
+/// by retention (modules/audit/auditRetention.ts) or with their
+/// organization.
+///
+/// The actor's email and the device's name are copied at write time, and
+/// deviceId deliberately has no foreign key: removing a member or a device
+/// must not rewrite or erase the history of what was done with it.
+model AuditEvent {
+  id         String       @id @default(uuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actor      User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail String
+  action     AuditAction
+  outcome    AuditOutcome
+  deviceId   String?
+  deviceName String?
+  /// Action-specific detail: the folder or file path, the command, the
+  /// live view's duration, or the reason it failed.
+  detail     Json?
+  occurredAt DateTime     @default(now())
+
+  @@index([orgId, occurredAt])
+  @@index([occurredAt])
+  @@map("audit_events")
 }

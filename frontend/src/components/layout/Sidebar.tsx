@@ -22,7 +22,7 @@ function NavRow({ to, label, icon, end }: NavItem) {
 }
 
 export function Sidebar() {
-  const { org } = useCurrentOrg();
+  const { org, can } = useCurrentOrg();
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low/60 px-sm py-lg md:flex">
@@ -38,7 +38,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-xs">
-        {navItemsFor(org.id).map((item) => (
+        {navItemsFor(org.id, can).map((item) => (
           <NavRow key={item.to} {...item} />
         ))}
       </nav>

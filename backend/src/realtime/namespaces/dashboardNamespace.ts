@@ -57,7 +57,7 @@ async function applyRoles(socket: DashboardSocket, roles: Map<string, OrgRole>):
     const role = roles.get(orgId);
     if (!role || !can(role, "screen:view")) {
       await socket.leave(streamRoom(deviceId));
-      await streamService.stopViewing(deviceId, socket.id);
+      await streamService.stopViewing(deviceId, socket.id, "ACCESS_REVOKED");
       logger.info(`Ended live view of device ${deviceId} for ${socket.user?.email}: no longer authorized`);
     }
   }
@@ -162,7 +162,7 @@ export function registerDashboardNamespace(io: SocketIOServer): void {
 
       try {
         const device = await authorizeDeviceAction(user, target.data, "screen:view");
-        await streamService.startViewing(device, socket.id);
+        await streamService.startViewing(device, { socketId: socket.id, actor: user });
         // Only confirmed viewers get frames (see broadcastStreamFrame) - join
         // this device's room now that this socket is one.
         await socket.join(streamRoom(device.id));
@@ -180,7 +180,7 @@ export function registerDashboardNamespace(io: SocketIOServer): void {
       const parsed = streamStopSchema.safeParse(payload);
       if (!parsed.success) return;
       void socket.leave(streamRoom(parsed.data.deviceId));
-      void streamService.stopViewing(parsed.data.deviceId, socket.id);
+      void streamService.stopViewing(parsed.data.deviceId, socket.id, "STOPPED");
     });
 
     // Shared annotations belong to a live view session: only a socket that

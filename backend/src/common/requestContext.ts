@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { AuditSubject } from "../modules/audit/audit.types";
 import { AuthenticatedUser } from "../modules/auth/auth.types";
 import { OrgDevice } from "../modules/device/device.types";
 import { OrgContext } from "../modules/organization/organization.types";
@@ -22,4 +23,9 @@ export function getOrg(req: Request): OrgContext {
 export function getDevice(req: Request): OrgDevice {
   if (!req.device) throw ApiError.internal("Route is missing deviceContext");
   return req.device;
+}
+
+/// The member and device of a device-scoped request, for its audit entry.
+export function getAuditSubject(req: Request): AuditSubject {
+  return { actor: getUser(req), device: getDevice(req) };
 }

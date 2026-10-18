@@ -45,7 +45,7 @@ The engineering fundamentals are good for a one-person project: clean layering, 
 
 **H3. Download auth puts a JWT in the URL.** `authGuardQuery` accepts the access token as `?token=` for file downloads, so a live token lands in Render/proxy logs and browser history. Replace with a short-lived single-use download ticket.
 
-**H4. No audit trail of who did what.** `Command` records the device and time but not the requesting user. Screenshots, live views, file listings and file downloads are not logged at all. Commercial customers (and any abuse investigation) need an append-only audit log.
+**H4. No audit trail of who did what.** *(Fixed: commands record who sent them, and screenshots, live views, file listings, downloads and commands are written to an append-only audit log that Owners and Admins can read, kept 90 days. See docs/architecture/audit-log.md.)* `Command` records the device and time but not the requesting user. Screenshots, live views, file listings and file downloads are not logged at all. Commercial customers (and any abuse investigation) need an append-only audit log.
 
 **H5. Credential and secret handling.**
 - Telegram bot token is stored as plaintext in the `settings` table.

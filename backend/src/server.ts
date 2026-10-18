@@ -2,6 +2,7 @@ import { createApp } from "./app";
 import { startDemo } from "./demo/startDemo";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
+import { startAuditRetention } from "./modules/audit/auditRetention";
 import { prisma } from "./prisma/client";
 import { initSocketServer } from "./realtime/socket";
 
@@ -20,6 +21,8 @@ async function main(): Promise<void> {
 
   initSocketServer(server);
   logger.info("Socket.IO server initialized (/agent, /dashboard namespaces)");
+
+  startAuditRetention();
 
   if (env.DEMO_MODE) {
     // A failure here leaves the demo unavailable but must not take the real
