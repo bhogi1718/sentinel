@@ -1,6 +1,6 @@
 # Landing page, pricing and error pages
 
-Status: proposed, awaiting approval. Nothing here is implemented yet.
+Status: implemented. Plans and prices as below, no Stripe checkout, and a portfolio note in the footer and on the pricing page. The "Business" plan links to the GitHub repository rather than an email address, so no personal address is published.
 
 ## Goal
 

@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { AuthProvider } from "./features/auth/AuthContext.tsx";
 import "./index.css";
 import { queryClient } from "./lib/queryClient.ts";
@@ -11,6 +12,7 @@ import { SocketProvider } from "./realtime/SocketProvider.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <ErrorBoundary>
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
@@ -22,5 +24,6 @@ createRoot(document.getElementById("root")!).render(
         </BrowserRouter>
       </QueryClientProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

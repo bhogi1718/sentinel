@@ -1,22 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useLocation } from "react-router-dom";
 import { extractErrorMessage } from "@/api/client";
-import { demoApi } from "@/api/demo.api";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, Input } from "@/components/ui/kit";
 import { routes } from "@/lib/routes";
 import { loginSchema } from "./loginSchema";
 import type { LoginFormValues } from "./loginSchema";
 import { useAuth } from "./useAuth";
+import { useTryDemo } from "./useTryDemo";
 
 export function LoginPage() {
-  const { login, startDemo, isAuthenticated } = useAuth();
-  const { data: demoEnabled } = useQuery({ queryKey: ["demo", "enabled"], queryFn: demoApi.isEnabled, staleTime: Infinity });
-  const [demoStarting, setDemoStarting] = useState(false);
+  const { login, isAuthenticated } = useAuth();
+  const demo = useTryDemo();
   const location = useLocation();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -29,19 +27,8 @@ export function LoginPage() {
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
 
   if (isAuthenticated) {
-    const redirectTo = (location.state as { from?: string } | null)?.from ?? routes.root;
+    const redirectTo = (location.state as { from?: string } | null)?.from ?? routes.app;
     return <Navigate to={redirectTo} replace />;
-  }
-
-  async function onTryDemo(): Promise<void> {
-    setFormError(null);
-    setDemoStarting(true);
-    try {
-      await startDemo();
-    } catch (err) {
-      setFormError(extractErrorMessage(err));
-      setDemoStarting(false);
-    }
   }
 
   async function onSubmit(values: LoginFormValues): Promise<void> {
@@ -130,13 +117,14 @@ export function LoginPage() {
           </form>
         </Card>
 
-        {demoEnabled && (
+        {demo.enabled && (
           <Card className="mt-md flex flex-col items-center gap-sm p-md text-center">
             <span className="text-body-sm text-on-surface">No account? Explore a live demo.</span>
             <span className="text-body-sm text-on-surface-variant">A simulated laptop with real-time events, metrics and live view.</span>
-            <Button variant="secondary" icon="play_arrow" onClick={() => void onTryDemo()} disabled={demoStarting} className="mt-xs w-full">
-              {demoStarting ? "Starting demo…" : "Try the demo"}
+            <Button variant="secondary" icon="play_arrow" onClick={() => void demo.start()} disabled={demo.starting} className="mt-xs w-full">
+              {demo.starting ? "Starting demo…" : "Try the demo"}
             </Button>
+            {demo.error && <p className="text-body-sm text-error">{demo.error}</p>}
           </Card>
         )}
 

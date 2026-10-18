@@ -1,6 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { LandingPage } from "@/features/marketing/LandingPage";
+import { MarketingLayout } from "@/features/marketing/MarketingLayout";
+import { NotFoundPage } from "@/features/marketing/NotFoundPage";
+import { PricingPage } from "@/features/marketing/PricingPage";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { DeviceLayout } from "@/features/device/DeviceLayout";
@@ -16,13 +20,27 @@ import { ProcessesPage } from "@/features/processes/ProcessesPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { routes } from "@/lib/routes";
 
+/// Console URLs from before organizations existed. Old bookmarks still
+/// land in the console instead of on a 404.
+const LEGACY_CONSOLE_PATHS = ["/dashboard", "/device", "/events", "/files", "/processes", "/settings"];
+
 export function App() {
   return (
     <Routes>
+      {/* The public site. */}
+      <Route element={<MarketingLayout />}>
+        <Route path={routes.home} element={<LandingPage />} />
+        <Route path={routes.pricing} element={<PricingPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+
       <Route path={routes.login} element={<LoginPage />} />
+      {LEGACY_CONSOLE_PATHS.map((path) => (
+        <Route key={path} path={path} element={<Navigate to={routes.app} replace />} />
+      ))}
 
       <Route element={<ProtectedRoute />}>
-        <Route path={routes.root} element={<OrgIndexRedirect />} />
+        <Route path={routes.app} element={<OrgIndexRedirect />} />
         <Route path={routes.noOrganization} element={<NoOrganizationPage />} />
 
         {/* Every organization page: the org comes from the URL, is checked
@@ -55,10 +73,6 @@ export function App() {
           </Route>
         </Route>
       </Route>
-
-      {/* Anything else - including the old single-device URLs like /device
-          or /dashboard - lands on the user's default organization. */}
-      <Route path="*" element={<Navigate to={routes.root} replace />} />
     </Routes>
   );
 }
