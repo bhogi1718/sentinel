@@ -56,7 +56,7 @@ The engineering fundamentals are good for a one-person project: clean layering, 
 
 **H7. No authorization model.** One role. SaaS needs organization owner/admin/member/viewer, and per-command permissions (a viewer should not be able to shut down a machine).
 
-**H8. Helper pipe is reachable by any interactive user.** `PIPE_SECURITY_DESCRIPTOR_SDDL = D:(A;;GA;;;SY)(A;;GA;;;IU)` grants Generic All to the INTERACTIVE group, so any local interactive user or process can connect and request screenshots, stream frames or annotation overlays, not only the agent service (`agent/src/helper_ipc.rs`). Restrict to SYSTEM plus the specific logged-in user's SID, or add a handshake.
+**H8. Helper pipe is reachable by any interactive user.** *(Fixed: the pipe now grants access only to SYSTEM and the helper's own user.)* `PIPE_SECURITY_DESCRIPTOR_SDDL = D:(A;;GA;;;SY)(A;;GA;;;IU)` grants Generic All to the INTERACTIVE group, so any local interactive user or process can connect and request screenshots, stream frames or annotation overlays, not only the agent service (`agent/src/helper_ipc.rs`). Restrict to SYSTEM plus the specific logged-in user's SID, or add a handshake.
 
 **H9. No CI and thin tests.** Backend coverage is 22% overall. No frontend tests. No integration tests against a real database, no end-to-end test, and the socket namespaces (the riskiest code) are untested. Nothing prevents a broken deploy.
 
