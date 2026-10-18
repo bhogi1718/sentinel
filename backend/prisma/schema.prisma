@@ -35,11 +35,18 @@ model RefreshToken {
   tokenHash String    @unique
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Every token rotated from one sign-in shares this id. Presenting a token
+  /// that was already rotated means it was copied, so the family is revoked.
+  /// Null only on rows created before families existed (backfilled to id).
+  familyId  String?
   expiresAt DateTime
+  /// Set when the token was used to get a new pair (rotation).
+  rotatedAt DateTime?
   revokedAt DateTime?
   createdAt DateTime  @default(now())
 
   @@index([userId])
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 
