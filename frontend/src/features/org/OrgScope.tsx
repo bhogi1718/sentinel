@@ -49,7 +49,7 @@ export function OrgScope() {
   }
 
   if (!value) {
-    return freshlyCheckedOrgId === orgId ? <Navigate to={routes.root} replace /> : <FullPageSpinner />;
+    return freshlyCheckedOrgId === orgId ? <Navigate to={routes.app} replace /> : <FullPageSpinner />;
   }
 
   return (
