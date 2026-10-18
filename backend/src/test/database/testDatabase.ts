@@ -16,6 +16,7 @@ export interface TestDatabase {
 }
 
 const TABLES_TO_RESET = [
+  "audit_events",
   "commands",
   "events",
   "devices",

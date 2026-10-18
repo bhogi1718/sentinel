@@ -18,6 +18,7 @@ export const PERMISSIONS = [
   "commands:send",
   "devices:manage",
   "settings:manage",
+  "audit:view",
   "members:manage",
   "org:manage",
 ] as const;

@@ -29,6 +29,9 @@ export const PERMISSIONS = {
   /// Adding devices.
   "devices:manage": "ADMIN",
   "settings:manage": "ADMIN",
+  /// The audit log of sensitive actions. Read-only for everyone; nothing
+  /// can change or remove its entries.
+  "audit:view": "ADMIN",
   "members:manage": "OWNER",
   "org:manage": "OWNER",
 } as const satisfies Record<string, OrgRole>;
