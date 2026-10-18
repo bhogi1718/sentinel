@@ -10,6 +10,7 @@ import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { DeviceLayout } from "@/features/device/DeviceLayout";
 import { DevicePage } from "@/features/device/DevicePage";
 import { DevicesPage } from "@/features/devices/DevicesPage";
+import { AuditLogPage } from "@/features/audit/AuditLogPage";
 import { EventsPage } from "@/features/events/EventsPage";
 import { FilesPage } from "@/features/files/FilesPage";
 import { NoOrganizationPage } from "@/features/org/NoOrganizationPage";
@@ -69,6 +70,14 @@ export function App() {
               />
             </Route>
             <Route path="events" element={<EventsPage />} />
+            <Route
+              path="audit"
+              element={
+                <RequirePermission permission="audit:view">
+                  <AuditLogPage />
+                </RequirePermission>
+              }
+            />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>

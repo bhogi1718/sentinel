@@ -1,3 +1,4 @@
+import type { ListAuditParams } from "./audit.api";
 import type { ListEventsParams } from "./events.api";
 
 /// TanStack Query keys, defined once so the socket handlers that patch the
@@ -21,4 +22,6 @@ export const queryKeys = {
   /// Prefix for every event list of an organization (all pages and filters).
   events: (orgId: string) => ["events", orgId] as const,
   eventsPage: (orgId: string, params: ListEventsParams) => ["events", orgId, params] as const,
+
+  auditPage: (orgId: string, params: ListAuditParams) => ["audit", orgId, params] as const,
 };

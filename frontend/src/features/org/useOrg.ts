@@ -30,3 +30,12 @@ export function useCurrentOrg() {
 export function useCan(permission: Permission): boolean {
   return useCurrentOrg().can(permission);
 }
+
+/// The members of an organization, for those allowed to see them.
+export function useMembers(orgId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.members(orgId),
+    queryFn: () => organizationApi.listMembers(orgId),
+    enabled,
+  });
+}

@@ -16,5 +16,6 @@ export const routes = {
   deviceProcesses: (orgId: string, deviceId: string) => `/o/${orgId}/devices/${deviceId}/processes`,
   deviceFiles: (orgId: string, deviceId: string) => `/o/${orgId}/devices/${deviceId}/files`,
   events: (orgId: string) => `/o/${orgId}/events`,
+  audit: (orgId: string) => `/o/${orgId}/audit`,
   settings: (orgId: string) => `/o/${orgId}/settings`,
 };

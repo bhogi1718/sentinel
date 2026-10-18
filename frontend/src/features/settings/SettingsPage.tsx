@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { extractErrorMessage } from "@/api/client";
-import { organizationApi } from "@/api/organization.api";
 import { queryKeys } from "@/api/queryKeys";
 import { settingsApi } from "@/api/settings.api";
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card, PageHeader, SectionLabel, Segmented, StatusPill } from "@/components/ui/kit";
 import { useAuth } from "@/features/auth/useAuth";
-import { useCurrentOrg } from "@/features/org/useOrg";
+import { useCurrentOrg, useMembers } from "@/features/org/useOrg";
 import { useTheme } from "@/lib/theme";
 import type { ThemeMode } from "@/lib/theme";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
@@ -29,11 +28,7 @@ export function SettingsPage() {
     queryKey: integrationsKey,
     queryFn: () => settingsApi.getIntegrationStatus(org.id),
   });
-  const { data: members } = useQuery({
-    queryKey: queryKeys.members(org.id),
-    queryFn: () => organizationApi.listMembers(org.id),
-    enabled: can("members:view"),
-  });
+  const { data: members } = useMembers(org.id, can("members:view"));
   const telegramConnected = integrations?.telegram.connected ?? false;
 
   const disconnectMutation = useMutation({
