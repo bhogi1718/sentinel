@@ -1,9 +1,10 @@
 import { Icon } from "@/components/ui/Icon";
 import { Button, Card } from "@/components/ui/kit";
 import { useAuth } from "@/features/auth/useAuth";
+import { CreateOrganizationForm } from "./CreateOrganizationForm";
 
-/// For a signed-in user who belongs to no organization: there is nothing
-/// they can see until someone adds them to one.
+/// For a signed-in user who belongs to no organization: they can create
+/// one, or wait to be added to someone else's.
 export function NoOrganizationPage() {
   const { user, logout } = useAuth();
 
@@ -16,10 +17,14 @@ export function NoOrganizationPage() {
         <div className="flex flex-col gap-xs">
           <h1 className="text-body-lg font-semibold text-on-surface">No organization yet</h1>
           <p className="text-body-sm text-on-surface-variant">
-            {user?.email} isn't a member of any organization. Ask an organization owner to add you.
+            {user?.email} isn't a member of any organization. Create one to add your laptops, or ask an
+            organization owner to invite you.
           </p>
         </div>
-        <Button variant="secondary" icon="logout" onClick={() => void logout()}>
+        <div className="w-full text-left">
+          <CreateOrganizationForm />
+        </div>
+        <Button variant="ghost" icon="logout" onClick={() => void logout()}>
           Log out
         </Button>
       </Card>

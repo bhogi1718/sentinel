@@ -24,7 +24,9 @@ export const auditService = {
     try {
       await auditRepository.create(entry);
     } catch (err) {
-      logger.error(`Failed to write audit entry ${entry.action} for device ${entry.device.id}`, {
+      logger.error(`Failed to write audit entry ${entry.action}`, {
+        orgId: entry.device ? entry.device.orgId : entry.orgId,
+        deviceId: entry.device?.id,
         actorId: entry.actor.id,
         outcome: entry.outcome,
         error: err instanceof Error ? err.message : err,

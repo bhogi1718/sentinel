@@ -19,8 +19,11 @@ export interface AuditSubject {
   device: AuditDevice;
 }
 
-export interface AuditEntry extends AuditSubject {
+/// One entry: about a device (the device carries its organization), or
+/// about the organization itself - a membership change - with no device.
+export type AuditEntry = {
+  actor: AuditActor;
   action: AuditAction;
   outcome: AuditOutcome;
   detail?: Record<string, unknown>;
-}
+} & ({ device: AuditDevice } | { orgId: string; device?: undefined });

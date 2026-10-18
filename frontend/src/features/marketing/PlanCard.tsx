@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { useTryDemo } from "@/features/auth/useTryDemo";
 import { routes } from "@/lib/routes";
 import { GITHUB_URL } from "./plans";
 import type { Plan } from "./plans";
@@ -9,7 +8,6 @@ const CTA_CLASS =
   "mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-mono text-label-mono uppercase tracking-wider transition-colors disabled:opacity-60";
 
 export function PlanCard({ plan }: { plan: Plan }) {
-  const demo = useTryDemo();
   const ctaStyle = plan.featured
     ? "bg-primary text-on-primary hover:bg-primary/90"
     : "border border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high";
@@ -45,13 +43,10 @@ export function PlanCard({ plan }: { plan: Plan }) {
         <a href={GITHUB_URL} target="_blank" rel="noreferrer" className={`${CTA_CLASS} ${ctaStyle}`}>
           Get in touch
         </a>
-      ) : demo.enabled ? (
-        <button type="button" onClick={() => void demo.start()} disabled={demo.starting} className={`${CTA_CLASS} ${ctaStyle}`}>
-          {demo.starting ? "Starting demo…" : "Try the demo"}
-        </button>
       ) : (
-        <Link to={routes.login} className={`${CTA_CLASS} ${ctaStyle}`}>
-          Sign in
+        <Link to={routes.signup} className={`${CTA_CLASS} ${ctaStyle}`}>
+          Get started free
+          <Icon name="arrow_forward" size={16} />
         </Link>
       )}
     </article>

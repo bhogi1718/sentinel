@@ -6,6 +6,9 @@ export const routes = {
   home: "/",
   pricing: "/pricing",
   login: "/login",
+  signup: "/signup",
+  /// Where an invite link points.
+  invite: (token: string) => `/invite/${token}`,
   /// The console's entry: sends a signed-in user to their organization.
   app: "/app",
   noOrganization: "/no-organization",

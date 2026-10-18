@@ -10,7 +10,21 @@ export interface CurrentUser {
   email: string;
 }
 
+export interface SignupInput {
+  name: string;
+  email: string;
+  password: string;
+  organizationName?: string;
+  /// Signing up from an invite link: join that organization instead.
+  inviteToken?: string;
+}
+
 export const authApi = {
+  async signup(input: SignupInput): Promise<AuthTokens> {
+    const response = await apiClient.post<{ success: true; data: AuthTokens }>("/auth/signup", input);
+    return response.data.data;
+  },
+
   async login(email: string, password: string): Promise<AuthTokens> {
     const response = await apiClient.post<{ success: true; data: AuthTokens }>("/auth/login", { email, password });
     return response.data.data;

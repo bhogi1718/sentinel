@@ -21,6 +21,7 @@ model User {
   memberships       Membership[]
   requestedCommands Command[]
   auditEvents       AuditEvent[]
+  sentInvitations   Invitation[]   @relation("InvitationCreator")
 
   @@map("users")
 }
@@ -66,6 +67,7 @@ model Organization {
   devices     Device[]
   settings    OrganizationSettings?
   auditEvents AuditEvent[]
+  invitations Invitation[]
 
   @@map("organizations")
 }
@@ -84,6 +86,33 @@ model Membership {
   @@unique([userId, orgId])
   @@index([orgId])
   @@map("memberships")
+}
+
+/// A link that lets whoever holds it join an organization with a fixed
+/// role (ADMIN or VIEWER - owners are made by promotion, not invitation).
+/// Only a hash of the link's token is stored. Single-use: acceptedAt is set
+/// when it's used; it can also expire or be revoked. There's no outbound
+/// email, so the owner shares the link themselves.
+model Invitation {
+  id           String       @id @default(uuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role         OrgRole
+  tokenHash    String       @unique
+  /// Who it's for, as the owner described them - a label only.
+  note         String?
+  createdById  String?
+  createdBy    User?        @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  /// The member it created; kept as a plain id so removing that member
+  /// later leaves the record of the invite intact.
+  acceptedById String?
+  revokedAt    DateTime?
+
+  @@index([orgId])
+  @@map("invitations")
 }
 
 /// Per-organization configuration that can change without a redeploy
@@ -198,8 +227,9 @@ model Command {
   @@map("commands")
 }
 
-/// The sensitive actions a member can take on a device - each one exposes
-/// the device owner's private data or changes the machine.
+/// What the audit log records: the sensitive actions a member can take on
+/// a device - each exposes the device owner's private data or changes the
+/// machine - and every change to who belongs to the organization.
 enum AuditAction {
   SCREENSHOT_CAPTURED
   LIVE_VIEW_STARTED
@@ -207,6 +237,12 @@ enum AuditAction {
   FILES_LISTED
   FILE_DOWNLOADED
   COMMAND_SENT
+  MEMBER_INVITED
+  INVITE_REVOKED
+  MEMBER_JOINED
+  MEMBER_ROLE_CHANGED
+  MEMBER_REMOVED
+  MEMBER_LEFT
 }
 
 enum AuditOutcome {

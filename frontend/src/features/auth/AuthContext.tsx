@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { authApi } from "@/api/auth.api";
-import type { CurrentUser } from "@/api/auth.api";
+import type { CurrentUser, SignupInput } from "@/api/auth.api";
 import { demoApi } from "@/api/demo.api";
 import { getAccessToken, setAccessToken, setUnauthorizedHandler } from "@/api/client";
 import { tokenStorage } from "@/api/tokenStorage";
@@ -12,6 +12,8 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /// Creates an account and its first organization, then signs in.
+  signup: (input: SignupInput) => Promise<void>;
   /// Signs in as the shared demo visitor (only where the demo is enabled).
   startDemo: () => Promise<void>;
   logout: () => Promise<void>;
@@ -98,6 +100,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [beginSession],
   );
 
+  const signup = useCallback(
+    async (input: SignupInput) => {
+      await beginSession(await authApi.signup(input));
+    },
+    [beginSession],
+  );
+
   const startDemo = useCallback(async () => {
     await beginSession(await demoApi.startSession());
   }, [beginSession]);
@@ -107,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     isAuthenticated: user !== null && getAccessToken() !== null,
     login,
+    signup,
     startDemo,
     logout,
   };

@@ -65,3 +65,33 @@ export const screenshotRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many screenshots requested, try again later")),
 });
+
+// Every sign-up adds an account and an organization to a free-tier
+// database, so a script mustn't be able to create them in bulk.
+export const signupRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 5 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many accounts created, try again later")),
+});
+
+// Creating organizations is capped per user in the service; this caps the
+// request rate on top.
+export const createOrganizationRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 10 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many organizations created, try again later")),
+});
+
+// Invite links are long random tokens, so guessing one isn't practical;
+// this just keeps the public lookup from being hammered.
+export const inviteRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 30 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many invite requests, try again later")),
+});

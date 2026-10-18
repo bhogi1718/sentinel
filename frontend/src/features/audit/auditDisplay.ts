@@ -13,7 +13,26 @@ export const auditActionDisplay: Record<AuditAction, { label: string; icon: Icon
   FILES_LISTED: { label: "Opened a folder", icon: "folder" },
   FILE_DOWNLOADED: { label: "Downloaded a file", icon: "download" },
   COMMAND_SENT: { label: "Sent a command", icon: "terminal" },
+  MEMBER_INVITED: { label: "Created an invite", icon: "send" },
+  INVITE_REVOKED: { label: "Revoked an invite", icon: "close" },
+  MEMBER_JOINED: { label: "Joined the organization", icon: "group" },
+  MEMBER_ROLE_CHANGED: { label: "Changed a role", icon: "shield_person" },
+  MEMBER_REMOVED: { label: "Removed a member", icon: "person" },
+  MEMBER_LEFT: { label: "Left the organization", icon: "logout" },
 };
+
+const ROLE_LABEL: Record<string, string> = { OWNER: "Owner", ADMIN: "Admin", VIEWER: "Viewer" };
+
+function roleLabel(value: unknown): string | undefined {
+  return typeof value === "string" ? (ROLE_LABEL[value] ?? value) : undefined;
+}
+
+/// The member a membership entry is about, as recorded at the time.
+function memberName(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const member = value as { name?: unknown; email?: unknown };
+  return text(member.name) || text(member.email);
+}
 
 const VIEW_END_REASONS: Record<string, string> = {
   STOPPED: "stopped by the viewer",
@@ -69,6 +88,19 @@ export function auditDetail(entry: AuditEntry): string | null {
         .filter(Boolean)
         .join(" · ") || null;
     }
+    case "MEMBER_INVITED":
+    case "INVITE_REVOKED": {
+      return [roleLabel(detail.role), text(detail.note)].filter(Boolean).join(" · ") || null;
+    }
+    case "MEMBER_JOINED":
+      return roleLabel(detail.role) ? `As ${roleLabel(detail.role)}` : null;
+    case "MEMBER_ROLE_CHANGED": {
+      const from = roleLabel(detail.fromRole);
+      const to = roleLabel(detail.toRole);
+      return `${memberName(detail.member) ?? "A member"}${from && to ? `: ${from} → ${to}` : ""}`;
+    }
+    case "MEMBER_REMOVED":
+      return memberName(detail.member) ?? null;
     default:
       return null;
   }

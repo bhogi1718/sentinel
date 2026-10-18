@@ -8,7 +8,8 @@ export interface Plan {
   priceNote: string;
   tagline: string;
   highlights: string[];
-  cta: "demo" | "contact";
+  /// "signup" goes to sign-up; "contact" to the project's GitHub.
+  cta: "signup" | "contact";
   featured?: boolean;
 }
 
@@ -20,7 +21,7 @@ export const PLANS: Plan[] = [
     priceNote: "forever",
     tagline: "For keeping an eye on your own laptops.",
     highlights: ["Up to 2 devices", "1 owner", "Live view, files and commands", "Telegram alerts", "7 days of command history"],
-    cta: "demo",
+    cta: "signup",
   },
   {
     id: "team",
@@ -35,7 +36,7 @@ export const PLANS: Plan[] = [
       "Telegram alerts",
       "90 days of command history",
     ],
-    cta: "demo",
+    cta: "signup",
     featured: true,
   },
   {

@@ -11,6 +11,9 @@ import { useTheme } from "@/lib/theme";
 import type { ThemeMode } from "@/lib/theme";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { ConnectTelegramDialog } from "./ConnectTelegramDialog";
+import { InviteDialog } from "./InviteDialog";
+import { MembersList } from "./MembersList";
+import { PendingInvites } from "./PendingInvites";
 
 const ROLE_LABEL = { OWNER: "Owner", ADMIN: "Admin", VIEWER: "Viewer" } as const;
 
@@ -18,11 +21,13 @@ export function SettingsPage() {
   const { user, logout } = useAuth();
   const { org, can } = useCurrentOrg();
   const canManageSettings = can("settings:manage");
+  const canManageMembers = can("members:manage");
   const integrationsKey = queryKeys.integrations(org.id);
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const queryClient = useQueryClient();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [connectTelegramOpen, setConnectTelegramOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const { data: integrations } = useQuery({
     queryKey: integrationsKey,
@@ -93,22 +98,18 @@ export function SettingsPage() {
                 {members ? `${members.length} member${members.length === 1 ? "" : "s"}` : org.slug}
               </span>
             </div>
+            {canManageMembers && (
+              <Button variant="secondary" icon="add" className="ml-auto" onClick={() => setInviteOpen(true)}>
+                Invite
+              </Button>
+            )}
           </div>
           {members && members.length > 0 && (
-            <div className="flex flex-col divide-y divide-outline-variant/60 border-t border-outline-variant">
-              {members.map((member) => (
-                <div key={member.userId} className="flex items-center gap-sm px-md py-sm">
-                  <Icon name="person" size={18} className="shrink-0 text-on-surface-variant" />
-                  <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">
-                    {member.name ?? member.email}
-                    {member.userId === user?.id && <span className="text-on-surface-variant"> (you)</span>}
-                  </span>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">{ROLE_LABEL[member.role]}</span>
-                </div>
-              ))}
-            </div>
+            <MembersList org={org} members={members} currentUserId={user?.id} canManage={canManageMembers} />
           )}
+          {canManageMembers && <PendingInvites orgId={org.id} />}
         </Card>
+        {canManageMembers && <InviteDialog orgId={org.id} open={inviteOpen} onClose={() => setInviteOpen(false)} />}
       </section>
 
       {/* Integrations */}

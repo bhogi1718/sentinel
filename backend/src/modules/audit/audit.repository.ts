@@ -9,13 +9,13 @@ export const auditRepository = {
   create(entry: AuditEntry) {
     return prisma.auditEvent.create({
       data: {
-        orgId: entry.device.orgId,
+        orgId: entry.device ? entry.device.orgId : entry.orgId,
         actorId: entry.actor.id,
         actorEmail: entry.actor.email,
         action: entry.action,
         outcome: entry.outcome,
-        deviceId: entry.device.id,
-        deviceName: entry.device.name,
+        deviceId: entry.device?.id,
+        deviceName: entry.device?.name,
         detail: (entry.detail ?? Prisma.JsonNull) as Prisma.InputJsonValue,
       },
     });

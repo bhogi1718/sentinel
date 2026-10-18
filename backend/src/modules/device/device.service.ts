@@ -1,11 +1,8 @@
 import crypto from "crypto";
+import { hashToken } from "../../common/hashToken";
 import { presence } from "../../realtime/presence";
 import { deviceRepository } from "./device.repository";
 import { AuthenticatedDevice, OrgDevice } from "./device.types";
-
-function hashToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
 
 function generateToken(): string {
   return crypto.randomBytes(48).toString("hex");

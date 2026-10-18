@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { InvitePage } from "@/features/auth/InvitePage";
+import { SignupPage } from "@/features/auth/SignupPage";
 import { LandingPage } from "@/features/marketing/LandingPage";
 import { MarketingLayout } from "@/features/marketing/MarketingLayout";
 import { NotFoundPage } from "@/features/marketing/NotFoundPage";
@@ -36,6 +38,8 @@ export function App() {
       </Route>
 
       <Route path={routes.login} element={<LoginPage />} />
+      <Route path={routes.signup} element={<SignupPage />} />
+      <Route path="/invite/:token" element={<InvitePage />} />
       {LEGACY_CONSOLE_PATHS.map((path) => (
         <Route key={path} path={path} element={<Navigate to={routes.app} replace />} />
       ))}

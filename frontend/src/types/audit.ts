@@ -4,13 +4,19 @@ export type AuditAction =
   | "LIVE_VIEW_ENDED"
   | "FILES_LISTED"
   | "FILE_DOWNLOADED"
-  | "COMMAND_SENT";
+  | "COMMAND_SENT"
+  | "MEMBER_INVITED"
+  | "INVITE_REVOKED"
+  | "MEMBER_JOINED"
+  | "MEMBER_ROLE_CHANGED"
+  | "MEMBER_REMOVED"
+  | "MEMBER_LEFT";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE";
 
 /// One entry of an organization's audit log. The actor's email and the
 /// device's name are as they were at the time; `actor` is null once that
-/// person's account no longer exists.
+/// person's account no longer exists. Membership entries have no device.
 export interface AuditEntry {
   id: string;
   action: AuditAction;

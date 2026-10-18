@@ -9,6 +9,8 @@ export const queryKeys = {
   organizations: ["organizations"] as const,
   organization: (orgId: string) => ["organizations", orgId] as const,
   members: (orgId: string) => ["organizations", orgId, "members"] as const,
+  invitations: (orgId: string) => ["organizations", orgId, "invitations"] as const,
+  invite: (token: string) => ["invite", token] as const,
   integrations: (orgId: string) => ["organizations", orgId, "integrations"] as const,
 
   devices: (orgId: string) => ["devices", orgId] as const,
