@@ -32,4 +32,8 @@ export const deviceApi = {
     const response = await apiClient.post<{ success: true; data: CreatedDevice }>(`${orgPath(orgId)}/devices`, { name });
     return response.data.data;
   },
+
+  async remove(ref: DeviceRef): Promise<void> {
+    await apiClient.delete(devicePath(ref));
+  },
 };

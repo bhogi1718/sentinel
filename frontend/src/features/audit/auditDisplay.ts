@@ -19,6 +19,7 @@ export const auditActionDisplay: Record<AuditAction, { label: string; icon: Icon
   MEMBER_ROLE_CHANGED: { label: "Changed a role", icon: "shield_person" },
   MEMBER_REMOVED: { label: "Removed a member", icon: "person" },
   MEMBER_LEFT: { label: "Left the organization", icon: "logout" },
+  DEVICE_REMOVED: { label: "Removed a device", icon: "delete" },
 };
 
 const ROLE_LABEL: Record<string, string> = { OWNER: "Owner", ADMIN: "Admin", VIEWER: "Viewer" };
@@ -39,6 +40,7 @@ const VIEW_END_REASONS: Record<string, string> = {
   DASHBOARD_CLOSED: "console closed",
   ACCESS_REVOKED: "access removed",
   DEVICE_OFFLINE: "device went offline",
+  DEVICE_REMOVED: "device removed",
 };
 
 /// "45 s", "3 min 12 s", "1 h 4 min".

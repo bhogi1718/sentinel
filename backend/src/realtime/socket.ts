@@ -61,6 +61,12 @@ export function broadcastStreamFrame(deviceId: string, jpeg: Buffer): void {
   io?.of("/dashboard").to(streamRoom(deviceId)).emit("stream:frame", jpeg);
 }
 
+/// Tells an organization's dashboards that one of its devices was removed,
+/// so open consoles drop it from their list and leave its pages.
+export function broadcastDeviceRemoved(orgId: string, deviceId: string): void {
+  io?.of("/dashboard").to(orgRoom(orgId)).emit("device:removed", { deviceId });
+}
+
 /// Tells an organization's dashboards whether one of its devices' live view
 /// is currently active (so a viewer opening a second tab, or one that just
 /// connected, reflects reality).
@@ -79,4 +85,12 @@ export async function findAgentSocket(deviceId: string) {
   const sockets = await agentNamespace.in(deviceRoom(deviceId)).fetchSockets();
   const currentId = presence.currentSocketId(deviceId);
   return sockets.find((socket) => socket.id === currentId) ?? sockets[0];
+}
+
+/// Closes every agent socket connected as this device. Agents authenticate
+/// only at handshake, so this is what makes a removed device's token stop
+/// working right away rather than at its next reconnect - which the
+/// handshake then refuses.
+export function disconnectAgent(deviceId: string): void {
+  io?.of("/agent").in(deviceRoom(deviceId)).disconnectSockets(true);
 }

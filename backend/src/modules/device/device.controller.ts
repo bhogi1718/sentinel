@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { sendSuccess } from "../../common/ApiResponse";
-import { getDevice, getOrg } from "../../common/requestContext";
+import { getDevice, getOrg, getUser } from "../../common/requestContext";
 import { deviceService } from "./device.service";
 import { CreateDeviceInput } from "./device.validation";
 
@@ -21,5 +21,10 @@ export const deviceController = {
     const { name } = req.body as CreateDeviceInput;
     const result = await deviceService.create(getOrg(req).id, name);
     sendSuccess(res, result, 201);
+  },
+
+  async remove(req: Request, res: Response): Promise<void> {
+    await deviceService.remove(getDevice(req), getUser(req));
+    sendSuccess(res, null);
   },
 };

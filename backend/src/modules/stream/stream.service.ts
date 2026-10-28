@@ -28,7 +28,7 @@ export interface Viewer {
 }
 
 /// Why a viewer's live view ended, as recorded in the audit log.
-export type ViewEndReason = "STOPPED" | "DASHBOARD_CLOSED" | "ACCESS_REVOKED" | "DEVICE_OFFLINE";
+export type ViewEndReason = "STOPPED" | "DASHBOARD_CLOSED" | "ACCESS_REVOKED" | "DEVICE_OFFLINE" | "DEVICE_REMOVED";
 
 interface ViewerState {
   actor: AuditActor;
@@ -199,11 +199,17 @@ export const streamService = {
   /// session is reset and the next viewer request starts a fresh one. Other
   /// devices' sessions are untouched.
   handleAgentDisconnected(deviceId: string): void {
+    streamService.endSession(deviceId, "DEVICE_OFFLINE");
+  },
+
+  /// Ends a device's live view for every viewer at once, recording `reason`
+  /// for each. Does nothing if no session is active.
+  endSession(deviceId: string, reason: "DEVICE_OFFLINE" | "DEVICE_REMOVED"): void {
     const session = sessions.get(deviceId);
     if (!session) return;
     sessions.delete(deviceId);
     broadcastStreamState(session.device.orgId, deviceId, false, null);
-    logger.info(`Live view for device ${deviceId} ended because its agent disconnected (session ${session.sessionId})`);
-    for (const viewer of session.viewers.values()) void auditEnd(session.device, viewer, "DEVICE_OFFLINE");
+    logger.info(`Live view for device ${deviceId} ended (${reason}, session ${session.sessionId})`);
+    for (const viewer of session.viewers.values()) void auditEnd(session.device, viewer, reason);
   },
 };

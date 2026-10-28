@@ -6,7 +6,7 @@ import type { IconName } from "@/components/ui/Icon";
 import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
 import { RadialGauge } from "@/components/ui/RadialGauge";
 import { ScreenshotViewer } from "@/components/ui/ScreenshotViewer";
-import { Card, SectionLabel, StatusPill } from "@/components/ui/kit";
+import { Button, Card, SectionLabel, StatusPill } from "@/components/ui/kit";
 import { CommandHistory } from "@/features/device/CommandHistory";
 import { LiveScreenViewer } from "@/features/device/LiveScreenViewer";
 import { REMOTE_COMMANDS } from "@/features/device/remoteCommands";
@@ -15,6 +15,7 @@ import { useMetrics } from "@/features/device/useMetrics";
 import { useRemoteCommand } from "@/features/device/useRemoteCommand";
 import { useScreenshot } from "@/features/device/useScreenshot";
 import { useCurrentDevice } from "@/features/devices/DeviceContext";
+import { RemoveDeviceDialog } from "@/features/devices/RemoveDeviceDialog";
 import { useCan } from "@/features/org/useOrg";
 import { formatBytes } from "@/lib/format";
 
@@ -65,7 +66,9 @@ export function DevicePage() {
   const { ref, device } = useCurrentDevice();
   const canViewScreen = useCan("screen:view");
   const canSendCommands = useCan("commands:send");
+  const canManageDevices = useCan("devices:manage");
   const isConnected = device.isOnline;
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   const { data: metrics, isError: isMetricsError, error: metricsError, refetch: refetchMetrics } = useMetrics(ref, isConnected);
   const { pendingType, requestCommand, confirm, cancel, isSending, errorMessage } = useRemoteCommand(ref);
@@ -191,6 +194,22 @@ export function DevicePage() {
       )}
 
       <CommandHistory deviceRef={ref} />
+
+      {canManageDevices && (
+        <Card className="flex flex-col gap-md border-error/30 p-md sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-xs">
+            <SectionLabel>Remove device</SectionLabel>
+            <span className="text-body-sm text-on-surface-variant">
+              Deletes this device and its history, and disconnects its agent for good.
+            </span>
+          </div>
+          <Button variant="danger" icon="delete" onClick={() => setRemoveOpen(true)} className="shrink-0">
+            Remove device
+          </Button>
+        </Card>
+      )}
+
+      <RemoveDeviceDialog deviceRef={ref} device={device} open={removeOpen} onClose={() => setRemoveOpen(false)} />
 
       <ConfirmDialog
         open={pendingCommand !== null}

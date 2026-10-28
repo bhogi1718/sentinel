@@ -10,7 +10,8 @@ export type AuditAction =
   | "MEMBER_JOINED"
   | "MEMBER_ROLE_CHANGED"
   | "MEMBER_REMOVED"
-  | "MEMBER_LEFT";
+  | "MEMBER_LEFT"
+  | "DEVICE_REMOVED";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE";
 
