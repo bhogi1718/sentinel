@@ -62,7 +62,14 @@ Get-Process -Name "sentinel-agent-helper" -ErrorAction SilentlyContinue | Stop-P
 Write-Host "Building release binaries..." -ForegroundColor Yellow
 Push-Location $AgentDir
 cargo build --release
+$buildExitCode = $LASTEXITCODE
 Pop-Location
+# A failed build leaves any previous binary in place, so checking only that
+# the exe exists would quietly install that stale one.
+if ($buildExitCode -ne 0) {
+    Write-Error "cargo build failed (exit code $buildExitCode) - nothing was installed. See the compiler output above."
+    exit 1
+}
 if (-not (Test-Path $ExePath)) {
     Write-Error "Build did not produce $ExePath"
     exit 1
