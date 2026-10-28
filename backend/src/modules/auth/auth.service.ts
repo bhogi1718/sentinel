@@ -6,6 +6,7 @@ import jwt, { SignOptions } from "jsonwebtoken";
 import { env } from "../../config/env";
 import { isDemoUser } from "../../demo/demoSetup";
 import { ApiError } from "../../common/ApiError";
+import { disconnectDashboardSockets } from "../../realtime/namespaces/dashboardNamespace";
 import { invitationService } from "../invitation/invitation.service";
 import { organizationSlug } from "../organization/organization.slug";
 import { authRepository } from "./auth.repository";
@@ -58,7 +59,9 @@ function signAccessToken(user: AuthenticatedUser): string {
   return jwt.sign(payload, env.JWT_ACCESS_SECRET, options);
 }
 
-async function issueRefreshToken(userId: string): Promise<string> {
+/// A refresh token. `familyId` is the sign-in it belongs to: a new sign-in
+/// starts a new family, and each rotation carries the family forward.
+async function issueRefreshToken(userId: string, familyId: string = crypto.randomUUID()): Promise<string> {
   const jti = crypto.randomUUID();
   const payload: JwtRefreshPayload = { sub: userId, jti, type: "refresh" };
   const options: SignOptions = {
@@ -70,6 +73,7 @@ async function issueRefreshToken(userId: string): Promise<string> {
   await authRepository.createRefreshToken({
     userId,
     tokenHash: hashToken(token),
+    familyId,
     expiresAt: parseExpiryToDate(env.JWT_REFRESH_EXPIRES_IN),
   });
 
@@ -157,6 +161,16 @@ export const authService = {
     const tokenHash = hashToken(refreshToken);
     const stored = await authRepository.findRefreshTokenByHash(tokenHash);
 
+    // A token that was already rotated is being presented a second time.
+    // Only someone holding a copy can do that - the browser's own copy was
+    // replaced when it rotated - so the whole sign-in is revoked, and the
+    // user's open consoles with it. The owner signs in again.
+    if (stored?.rotatedAt) {
+      await authRepository.revokeRefreshTokenFamily(stored.familyId ?? stored.id);
+      disconnectDashboardSockets(stored.userId);
+      throw ApiError.unauthorized("Refresh token is no longer valid");
+    }
+
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
       throw ApiError.unauthorized("Refresh token is no longer valid");
     }
@@ -166,13 +180,13 @@ export const authService = {
       throw ApiError.unauthorized("Invalid or expired refresh token");
     }
 
-    // Rotate: revoke the used token and issue a new pair. This limits the
-    // blast radius if a refresh token is ever stolen - it's single-use.
-    await authRepository.revokeRefreshToken(stored.id);
+    // Rotate: mark the used token and issue a new pair in the same sign-in.
+    // Each token works once, which limits the damage if one is stolen.
+    await authRepository.markRefreshTokenRotated(stored.id);
 
     const authenticatedUser: AuthenticatedUser = { id: user.id, email: user.email };
     const accessToken = signAccessToken(authenticatedUser);
-    const newRefreshToken = await issueRefreshToken(user.id);
+    const newRefreshToken = await issueRefreshToken(user.id, stored.familyId ?? stored.id);
 
     return { accessToken, refreshToken: newRefreshToken };
   },
@@ -211,6 +225,9 @@ export const authService = {
     const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
     await authRepository.updatePasswordHash(userId, newPasswordHash);
     await authRepository.revokeAllRefreshTokensForUser(userId);
+    // Their open consoles authenticated with the old session: close them now,
+    // rather than when their access token expires (up to 15 minutes later).
+    disconnectDashboardSockets(userId);
   },
 
   /// When an access token (already checked by verifyAccessToken) stops being

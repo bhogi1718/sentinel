@@ -1,6 +1,6 @@
 # Accounts: sign-up, invites and members
 
-Status: proposed, waiting for approval.
+Status: implemented (sign-up, invites and member management in PR 24; session hardening after it).
 
 ## Goal
 
@@ -110,8 +110,9 @@ All of these are refused in the demo organization (`members:manage` is already d
 
 ## Session hardening (in this module)
 
-- **Refresh-token reuse detection.** If an already-rotated refresh token is presented again, someone has a copy of it. Every token in that login's family is then revoked, which signs out the thief and the owner, and the owner logs in again. Today such a token is only rejected.
-- **Realtime cut-off.** On password change and on detected reuse, the user's open dashboard sockets are disconnected at once, instead of when their access token expires (up to 15 minutes later).
+- **Refresh-token reuse detection.** Each sign-in starts a token family (`refresh_tokens.familyId`), and every rotation stays in it. A rotated token is marked `rotatedAt`. If it's presented again, someone has a copy of it: every token in that family is revoked, which signs out the thief and the owner, and the owner logs in again. Other sign-ins of the same person aren't affected, and a token revoked by logout is only refused, not treated as reuse.
+- **Realtime cut-off.** On password change and on detected reuse, the user's open dashboard sockets are disconnected at once (`disconnectDashboardSockets`), instead of when their access token expires (up to 15 minutes later). The console then tries to refresh, fails, and returns to sign-in.
+- **Known trade-off:** two tabs of the same browser share one refresh token. If both refresh in the same instant, the second looks like reuse and that sign-in ends. It's rare (refreshes happen every 15 minutes, per tab) and fails safe, so there's no grace window for now.
 
 ## Not in this module
 

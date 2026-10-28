@@ -40,11 +40,12 @@ export const authRepository = {
     });
   },
 
-  createRefreshToken(params: { userId: string; tokenHash: string; expiresAt: Date }) {
+  createRefreshToken(params: { userId: string; tokenHash: string; familyId: string; expiresAt: Date }) {
     return prisma.refreshToken.create({
       data: {
         userId: params.userId,
         tokenHash: params.tokenHash,
+        familyId: params.familyId,
         expiresAt: params.expiresAt,
       },
     });
@@ -57,6 +58,21 @@ export const authRepository = {
   revokeRefreshToken(id: string) {
     return prisma.refreshToken.update({
       where: { id },
+      data: { revokedAt: new Date() },
+    });
+  },
+
+  /// Marks a token as used to make a new pair. Presenting it again later is
+  /// reuse, which is what rotatedAt distinguishes from a plain logout.
+  markRefreshTokenRotated(id: string) {
+    const now = new Date();
+    return prisma.refreshToken.update({ where: { id }, data: { rotatedAt: now, revokedAt: now } });
+  },
+
+  /// Revokes every live token from one sign-in.
+  revokeRefreshTokenFamily(familyId: string) {
+    return prisma.refreshToken.updateMany({
+      where: { familyId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
   },
