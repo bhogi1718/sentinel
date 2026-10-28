@@ -14,10 +14,11 @@ An organization's owners and admins can answer "who looked at this laptop, and w
 | --- | --- | --- |
 | `SCREENSHOT_CAPTURED` | After the capture succeeds or fails | the reason, on failure |
 | `LIVE_VIEW_STARTED` | When a member starts or joins a device's live view | the reason, on failure |
-| `LIVE_VIEW_ENDED` | When that member's view ends, however it ends | `reason` (`STOPPED`, `DASHBOARD_CLOSED`, `ACCESS_REVOKED`, `DEVICE_OFFLINE`) and `durationSeconds` |
+| `LIVE_VIEW_ENDED` | When that member's view ends, however it ends | `reason` (`STOPPED`, `DASHBOARD_CLOSED`, `ACCESS_REVOKED`, `DEVICE_OFFLINE`, `DEVICE_REMOVED`) and `durationSeconds` |
 | `FILES_LISTED` | After a folder listing | `path` |
 | `FILE_DOWNLOADED` | When the download finishes or fails | `path`, and `sizeBytes` or the reason |
 | `COMMAND_SENT` | After the command is handed to the agent | `command`, and `pid` / `processName` for an ended process |
+| `DEVICE_REMOVED` | After an Owner or Admin removes a device (`DELETE /api/orgs/:orgId/devices/:deviceId`). The device's events and commands are deleted with it, its live view ends, and its connected agent is disconnected; its token is refused from then on | the reason, on failure |
 
 Every entry also has the organization, the member (id, plus their email copied at the time), the device (id, plus its name copied at the time), `SUCCESS` or `FAILURE`, and the time.
 

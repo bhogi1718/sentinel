@@ -5,7 +5,7 @@ vi.mock("../organization/organization.repository", () => ({
   organizationRepository: { findMembership: vi.fn() },
 }));
 vi.mock("./device.repository", () => ({
-  deviceRepository: { findInOrg: vi.fn(), listForOrg: vi.fn(), create: vi.fn() },
+  deviceRepository: { findInOrg: vi.fn(), listForOrg: vi.fn(), create: vi.fn(), delete: vi.fn() },
 }));
 vi.mock("../command/command.service", () => ({
   commandService: { sendCommand: vi.fn(), listForDevice: vi.fn() },
@@ -65,6 +65,7 @@ interface DeviceRoute {
 // Every route that acts on one device, with the lowest role allowed to use it.
 const DEVICE_ROUTES: DeviceRoute[] = [
   { name: "GET device", send: () => request(app).get(BASE).set(auth), allowedFor: "VIEWER" },
+  { name: "DELETE device", send: () => request(app).delete(BASE).set(auth), allowedFor: "ADMIN" },
   { name: "GET commands", send: () => request(app).get(`${BASE}/commands`).set(auth), allowedFor: "VIEWER" },
   { name: "GET processes", send: () => request(app).get(`${BASE}/processes`).set(auth), allowedFor: "VIEWER" },
   { name: "GET metrics", send: () => request(app).get(`${BASE}/metrics`).set(auth), allowedFor: "VIEWER" },
@@ -87,6 +88,7 @@ const ROLE_RANK: Record<OrgRole, number> = { VIEWER: 0, ADMIN: 1, OWNER: 2 };
 beforeEach(() => {
   vi.clearAllMocks();
   mockedDeviceRepo.findInOrg.mockResolvedValue(DEVICE);
+  mockedDeviceRepo.delete.mockResolvedValue(true);
   vi.mocked(commandService.listForDevice).mockResolvedValue({ items: [], pagination: {} } as never);
   vi.mocked(commandService.sendCommand).mockResolvedValue({ id: "cmd-1" } as never);
   vi.mocked(processService.listProcesses).mockResolvedValue([]);

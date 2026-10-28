@@ -33,6 +33,7 @@ deviceRouter.post(
 const deviceScopedRouter = Router({ mergeParams: true });
 
 deviceScopedRouter.get("/", requirePermission("devices:view"), asyncHandler(deviceController.get));
+deviceScopedRouter.delete("/", requirePermission("devices:manage"), asyncHandler(deviceController.remove));
 deviceScopedRouter.get(
   "/commands",
   requirePermission("devices:view"),

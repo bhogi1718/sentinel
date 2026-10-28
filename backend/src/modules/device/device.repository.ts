@@ -25,8 +25,12 @@ export const deviceRepository = {
     return prisma.device.findUnique({ where: { tokenHash } });
   },
 
+  // The two writes below use updateMany so that a device removed while its
+  // agent was still connected is simply skipped, rather than failing with
+  // "record not found" from the agent's last report or disconnect.
+
   updateLastSeen(id: string) {
-    return prisma.device.update({
+    return prisma.device.updateMany({
       where: { id },
       data: { lastSeenAt: new Date() },
     });
@@ -35,7 +39,7 @@ export const deviceRepository = {
   /// Last-known connection state, kept as a record only - whether a device
   /// is reachable comes from realtime/presence, never from this column.
   setOnlineStatus(id: string, isOnline: boolean) {
-    return prisma.device.update({
+    return prisma.device.updateMany({
       where: { id },
       data: { isOnline, ...(isOnline ? { lastSeenAt: new Date() } : {}) },
     });
@@ -46,5 +50,13 @@ export const deviceRepository = {
       data: { orgId: params.orgId, name: params.name, tokenHash: params.tokenHash },
       select: orgDeviceSelect,
     });
+  },
+
+  /// Deletes the device, scoped to its organization. Its events and commands
+  /// go with it (cascade); audit entries keep their copy of its name.
+  /// Returns whether a row was deleted.
+  async delete(orgId: string, deviceId: string): Promise<boolean> {
+    const { count } = await prisma.device.deleteMany({ where: { id: deviceId, orgId } });
+    return count > 0;
   },
 };

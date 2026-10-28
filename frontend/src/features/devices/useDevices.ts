@@ -31,3 +31,16 @@ export function useCreateDevice(orgId: string) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.devices(orgId) }),
   });
 }
+
+/// Removes the device for good. Its cached data is dropped rather than
+/// refetched - the caller navigates away, and the device no longer exists.
+export function useRemoveDevice(ref: DeviceRef) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => deviceApi.remove(ref),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: queryKeys.device(ref.deviceId), exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices(ref.orgId) });
+    },
+  });
+}
