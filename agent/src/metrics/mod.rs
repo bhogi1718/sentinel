@@ -58,7 +58,7 @@ pub fn collect_metrics() -> SystemMetrics {
 
     system.refresh_cpu_usage();
     system.refresh_memory();
-    networks.refresh();
+    networks.refresh(true);
 
     let (download_bytes, upload_bytes): (u64, u64) = networks
         .values()
