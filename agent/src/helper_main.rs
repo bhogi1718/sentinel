@@ -132,12 +132,7 @@ fn init_helper_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> 
 
     #[cfg(not(debug_assertions))]
     {
-        let log_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-
-        let file_appender = tracing_appender::rolling::daily(log_dir, "sentinel-agent-helper.log");
+        let file_appender = tracing_appender::rolling::daily(helper_log_dir(), "sentinel-agent-helper.log");
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         tracing_subscriber::fmt()
@@ -147,6 +142,31 @@ fn init_helper_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> 
             .init();
 
         Some(guard)
+    }
+}
+
+/// Where the helper writes its log: %LOCALAPPDATA%\Sentinel Agent. The
+/// helper runs as the logged-in user while its exe is installed under
+/// Program Files, which that user can't write to - and the rolling file
+/// appender panics if it can't create its file. Falls back to the exe's own
+/// folder (as before) if LOCALAPPDATA is missing or the folder can't be made.
+#[cfg(not(debug_assertions))]
+fn helper_log_dir() -> std::path::PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    match std::env::var_os("LOCALAPPDATA") {
+        Some(local) => {
+            let dir = std::path::PathBuf::from(local).join("Sentinel Agent");
+            if std::fs::create_dir_all(&dir).is_ok() {
+                dir
+            } else {
+                exe_dir
+            }
+        }
+        None => exe_dir,
     }
 }
 
