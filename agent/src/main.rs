@@ -6,6 +6,7 @@ mod events;
 mod files;
 mod helper_ipc;
 mod metrics;
+mod pairing;
 mod processes;
 mod screenshot;
 mod service;
@@ -50,6 +51,13 @@ fn run_console_mode() {
 }
 
 fn main() {
+    // `sentinel-agent pair <CODE> --server <URL>`: a one-off command run by
+    // install-service.ps1 (or by hand), never by the service manager.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("pair") {
+        std::process::exit(pairing::run(&args[1..]));
+    }
+
     // Launching via the Service Control Manager and launching normally
     // (double-click, `cargo run`, a terminal) look identical from the
     // process's own perspective except for this: service_dispatcher::start

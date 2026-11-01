@@ -92,7 +92,7 @@ describe("demo session", () => {
   it("can't change the shared demo for other visitors", async () => {
     const auth = await demoSession();
 
-    const addDevice = await request(server).post(`/api/orgs/${demoOrgId}/devices`).set(auth).send({ name: "Mine now" });
+    const addDevice = await request(server).post(`/api/orgs/${demoOrgId}/devices/pairing-codes`).set(auth).send({ name: "Mine now" });
     expect(addDevice.status).toBe(403);
 
     const disconnect = await request(server).delete(`/api/orgs/${demoOrgId}/settings/integrations/telegram`).set(auth);

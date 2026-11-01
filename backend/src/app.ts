@@ -5,6 +5,7 @@ import { corsOrigins } from "./config/env";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalRateLimiter } from "./middleware/rateLimiter";
 import { authRouter } from "./modules/auth/auth.routes";
+import { agentPairingRouter } from "./modules/pairing/pairing.routes";
 import { demoRouter } from "./modules/demo/demo.routes";
 import { publicInvitationRouter } from "./modules/invitation/invitation.routes";
 import { organizationRouter } from "./modules/organization/organization.routes";
@@ -35,6 +36,7 @@ export function createApp(): Application {
   app.use("/api/auth", authRouter);
   app.use("/api/demo", demoRouter);
   app.use("/api/invites", publicInvitationRouter);
+  app.use("/api/agent", agentPairingRouter);
   // Every device, event and settings route lives under /api/orgs/:orgId.
   app.use("/api/orgs", organizationRouter);
 

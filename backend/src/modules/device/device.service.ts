@@ -41,13 +41,12 @@ export const deviceService = {
     return device ? withPresence(device) : null;
   },
 
-  /// Registers a new device in the organization and returns its agent
-  /// token. Only the hash is stored, so this is the one and only time the
-  /// token is ever available.
-  async create(orgId: string, name: string): Promise<{ device: OrgDevice; token: string }> {
+  /// A new device's identity and agent token, for the caller to insert
+  /// (see pairingService.claim, which does so inside its transaction). Only
+  /// the hash is ever stored, so this is the one time the token exists.
+  newDevice(orgId: string, name: string): { device: AuthenticatedDevice; token: string; tokenHash: string } {
     const token = generateToken();
-    const device = await deviceRepository.create({ orgId, name, tokenHash: hashToken(token) });
-    return { device: withPresence(device), token };
+    return { device: { id: crypto.randomUUID(), orgId, name }, token, tokenHash: hashToken(token) };
   },
 
   /// Removes a device for good: its row (and with it its token, events and

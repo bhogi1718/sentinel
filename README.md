@@ -129,7 +129,7 @@ npm run dev
 
 Runs on `http://localhost:5173`. Vite proxies `/api` and `/socket.io` to the backend on port 5000 automatically (see `frontend/vite.config.ts`), so no CORS setup is needed locally.
 
-Open `http://localhost:5173` in a browser and log in with the admin email/password from `backend/.env` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). You land in the "Personal" organization; add more laptops from **Devices > Add device**, which shows each device's agent token once.
+Open `http://localhost:5173` in a browser and log in with the admin email/password from `backend/.env` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). You land in the "Personal" organization; add more laptops from **Devices > Add device**, which gives a short pairing code for the agent (see below).
 
 ### Try it without any database
 
@@ -146,23 +146,31 @@ Start the backend with that `DATABASE_URL`. The sandbox has two demo organizatio
 
 The agent reports system events (boot, lock/unlock, sleep/wake, network, battery) to the backend. It runs as a **Windows Service** (`SentinelAgent`) so it doesn't need a terminal open, auto-starts on boot, and auto-reconnects if the backend drops.
 
-### One-time setup
+Building it needs Rust and the Visual Studio C++ Build Tools (`winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"`). If the repo lives in OneDrive, put the build folder outside it - OneDrive marks its folders read-only, which breaks some crates' build scripts: `mklink /J agent\target "%LOCALAPPDATA%\sentinel-agent-target"`.
 
-1. Copy `agent/agent.toml.example` to `agent/agent.toml`
-2. Fill in `server_url` (`http://localhost:5000` for local dev, or your Render backend's `https://...onrender.com` URL for production) and `device_token` (from the seed/rotate script above)
+### Add a laptop (pairing)
 
-### Install as a service (recommended)
+1. In the dashboard, **Devices > Add device**, name the laptop and click **Get pairing code**. You get a code like `K7QM-3XRP`, valid for 15 minutes, and the exact command to run.
+2. On the laptop, in an **elevated (Administrator)** PowerShell in the `agent` folder, run that command:
 
-From an **elevated (Administrator)** PowerShell:
+```powershell
+.\scripts\install-service.ps1 -PairingCode K7QM-3XRP -ServerUrl https://your-backend.onrender.com
+```
+
+It builds the agent, exchanges the code for the device's own token (written straight into `agent/agent.toml`, which it creates if needed with `browse_root` set to your user folder), and installs the service. The dashboard dialog switches to "paired" the moment it happens. No token is ever copied by hand. Details: [docs/architecture/device-pairing.md](docs/architecture/device-pairing.md).
+
+### Install or update the service
+
+From an **elevated (Administrator)** PowerShell, without a pairing code to reinstall with the existing `agent.toml`:
 
 ```powershell
 cd agent
 .\scripts\install-service.ps1
 ```
 
-Builds the release binary, registers the service with auto-start and auto-restart-on-failure, and starts it immediately. Re-running this script is safe - it stops, reconfigures, and restarts the existing service.
+Builds the release binaries, copies the agent, its helper and `agent.toml` to `C:\Program Files\Sentinel Agent`, registers the service with auto-start and auto-restart-on-failure, and starts it. The running install is only replaced once the build (and pairing, if any) succeeded. Re-running it is safe.
 
-Logs go to `agent/target/release/sentinel-agent.log.<date>` (the service has no console).
+Logs: the service writes `C:\Program Files\Sentinel Agent\sentinel-agent.log.<date>`, the helper `%LOCALAPPDATA%\Sentinel Agent\sentinel-agent-helper.log.<date>`.
 
 To remove it:
 

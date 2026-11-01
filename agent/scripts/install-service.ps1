@@ -14,7 +14,20 @@
     not skip the rebuild: a service left pointed at a stale binary can
     silently drift from the checked-out source (this happened once
     already - see README's agent troubleshooting section).
+
+    To add a new device, create a pairing code in the dashboard (Devices >
+    Add device) and pass it with -PairingCode and -ServerUrl: the agent
+    exchanges it for its token and writes agent.toml itself (creating it if
+    needed). Without them, the existing agent.toml is installed as-is.
+
+.EXAMPLE
+    .\scripts\install-service.ps1 -PairingCode K7QM-3XRP -ServerUrl https://your-backend.onrender.com
 #>
+
+param(
+    [string]$PairingCode,
+    [string]$ServerUrl
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -49,28 +62,41 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit 1
 }
 
-if (-not (Test-Path $ConfigSource)) {
-    Write-Error "agent.toml not found at $ConfigSource. Copy agent.toml.example to agent.toml and fill in your device token first."
+if ($PairingCode -and -not $ServerUrl) {
+    Write-Error "-PairingCode also needs -ServerUrl (the Sentinel backend, e.g. https://your-backend.onrender.com). The dashboard's Add device dialog shows the full command."
+    exit 1
+}
+if (-not $PairingCode -and -not (Test-Path $ConfigSource)) {
+    Write-Error "agent.toml not found at $ConfigSource. Add the device in the dashboard and re-run with the -PairingCode and -ServerUrl it shows."
     exit 1
 }
 
-# Stop and remove any existing service *before* building - the running
-# exe is locked while the service holds it open, so building first would
-# silently leave the old binary in place (cargo can't overwrite a locked
-# file) while everything downstream assumes it just installed the new one.
-$existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "Service already exists, stopping and removing before reinstall..." -ForegroundColor Yellow
-    if ($existing.Status -eq "Running") {
-        Stop-Service -Name $ServiceName -Force
+# Removes the installed service and stops the helper. The installed copies
+# live in Program Files, so the build below doesn't touch them - this runs
+# only once the new binaries are built (and paired), so a failed build or
+# pairing leaves the current install running.
+function Remove-InstalledAgent {
+    $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Host "Service already exists, stopping and removing before reinstall..." -ForegroundColor Yellow
+        if ($existing.Status -eq "Running") {
+            Stop-Service -Name $ServiceName -Force
+        }
+        sc.exe delete $ServiceName | Out-Null
+        Start-Sleep -Seconds 1
     }
-    sc.exe delete $ServiceName | Out-Null
-    Start-Sleep -Seconds 1
+    Get-Process -Name "sentinel-agent-helper" -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
-# The helper runs per-session (outside the service) and would just as
-# happily lock its own exe against the rebuild below.
-Get-Process -Name "sentinel-agent-helper" -ErrorAction SilentlyContinue | Stop-Process -Force
+# Older installs ran the service and helper straight from the build folder,
+# where they lock the exes the build is about to overwrite.
+$legacyService = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
+if ($legacyService -and $legacyService.PathName -notlike "*$InstallDir*") {
+    Remove-InstalledAgent
+}
+Get-Process -Name "sentinel-agent-helper" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path -notlike "$InstallDir*" } |
+    Stop-Process -Force
 
 Write-Host "Building release binaries..." -ForegroundColor Yellow
 Push-Location $AgentDir
@@ -91,6 +117,19 @@ if (-not (Test-Path $HelperExePath)) {
     Write-Error "Build did not produce $HelperExePath"
     exit 1
 }
+
+if ($PairingCode) {
+    # Exchanges the code for this device's token and writes it (with the
+    # server URL) into agent.toml, keeping any other settings.
+    Write-Host "Pairing with $ServerUrl..." -ForegroundColor Yellow
+    & $ExePath pair $PairingCode --server $ServerUrl --config $ConfigSource
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Pairing failed (see above) - nothing was installed."
+        exit 1
+    }
+}
+
+Remove-InstalledAgent
 
 Copy-Item $ConfigSource $ConfigDest -Force
 Write-Host "Copied agent.toml to $ConfigDest" -ForegroundColor Green

@@ -10,11 +10,13 @@ export interface Device {
   createdAt: string;
 }
 
-export interface CreatedDevice {
-  device: Device;
-  /// The agent token. Returned exactly once, at creation - the server keeps
-  /// only its hash.
-  token: string;
+/// A code an agent exchanges for a new device and its token. The code is
+/// returned exactly once, at creation - the server keeps only its hash.
+export interface PairingCode {
+  id: string;
+  code: string;
+  deviceName: string;
+  expiresAt: string;
 }
 
 export const deviceApi = {
@@ -28,9 +30,13 @@ export const deviceApi = {
     return response.data.data;
   },
 
-  async create(orgId: string, name: string): Promise<CreatedDevice> {
-    const response = await apiClient.post<{ success: true; data: CreatedDevice }>(`${orgPath(orgId)}/devices`, { name });
+  async createPairingCode(orgId: string, name: string): Promise<PairingCode> {
+    const response = await apiClient.post<{ success: true; data: PairingCode }>(`${orgPath(orgId)}/devices/pairing-codes`, { name });
     return response.data.data;
+  },
+
+  async cancelPairingCode(orgId: string, pairingCodeId: string): Promise<void> {
+    await apiClient.delete(`${orgPath(orgId)}/devices/pairing-codes/${pairingCodeId}`);
   },
 
   async remove(ref: DeviceRef): Promise<void> {

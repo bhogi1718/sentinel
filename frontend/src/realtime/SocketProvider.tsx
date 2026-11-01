@@ -88,6 +88,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       queryClient.setQueriesData<Device[]>({ queryKey: ["devices"] }, (list) => list?.map(patch));
     });
 
+    // A device was just paired: every device list of its organization may
+    // be missing it. (AddDeviceDialog listens for this event too.)
+    dashboardSocket.on("device:added", () => {
+      void queryClient.invalidateQueries({ queryKey: ["devices"] });
+    });
+
     // Someone removed a device: drop it from every list, and refetch its own
     // query so a console open on its page shows "Device not found".
     dashboardSocket.on("device:removed", (payload: { deviceId: string }) => {

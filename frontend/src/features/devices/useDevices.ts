@@ -24,12 +24,8 @@ export function useDevice(ref: DeviceRef) {
   });
 }
 
-export function useCreateDevice(orgId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) => deviceApi.create(orgId, name),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.devices(orgId) }),
-  });
+export function useCreatePairingCode(orgId: string) {
+  return useMutation({ mutationFn: (name: string) => deviceApi.createPairingCode(orgId, name) });
 }
 
 /// Removes the device for good. Its cached data is dropped rather than
