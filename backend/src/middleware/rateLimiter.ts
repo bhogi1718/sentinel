@@ -95,3 +95,14 @@ export const inviteRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many invite requests, try again later")),
 });
+
+// A pairing code is the only credential an agent presents to get its token,
+// so claims are capped per address: with codes living 15 minutes and
+// working once, guessing one in a few attempts is out of reach.
+export const pairingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 10 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(ApiError.tooManyRequests("Too many pairing attempts, try again later")),
+});

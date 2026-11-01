@@ -22,6 +22,7 @@ model User {
   requestedCommands Command[]
   auditEvents       AuditEvent[]
   sentInvitations   Invitation[]   @relation("InvitationCreator")
+  pairingCodes      PairingCode[]  @relation("PairingCodeCreator")
 
   @@map("users")
 }
@@ -74,7 +75,8 @@ model Organization {
   devices     Device[]
   settings    OrganizationSettings?
   auditEvents AuditEvent[]
-  invitations Invitation[]
+  invitations  Invitation[]
+  pairingCodes PairingCode[]
 
   @@map("organizations")
 }
@@ -120,6 +122,30 @@ model Invitation {
 
   @@index([orgId])
   @@map("invitations")
+}
+
+/// A short code that lets an agent register a new device in an
+/// organization without anyone copying its token by hand. An Owner or Admin
+/// creates it (naming the device); the agent exchanges it once for the new
+/// device's token. Only a hash is stored; it expires after 15 minutes.
+/// See docs/architecture/device-pairing.md.
+model PairingCode {
+  id          String       @id @default(uuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  deviceName  String
+  codeHash    String       @unique
+  createdById String?
+  createdBy   User?        @relation("PairingCodeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+  /// The device it created; a plain id, so removing that device later
+  /// leaves this record alone.
+  deviceId    String?
+
+  @@index([orgId])
+  @@map("pairing_codes")
 }
 
 /// Per-organization configuration that can change without a redeploy
@@ -251,6 +277,7 @@ enum AuditAction {
   MEMBER_REMOVED
   MEMBER_LEFT
   DEVICE_REMOVED
+  DEVICE_ADDED
 }
 
 enum AuditOutcome {

@@ -5,7 +5,10 @@ vi.mock("../organization/organization.repository", () => ({
   organizationRepository: { findMembership: vi.fn() },
 }));
 vi.mock("./device.repository", () => ({
-  deviceRepository: { findInOrg: vi.fn(), listForOrg: vi.fn(), create: vi.fn(), delete: vi.fn() },
+  deviceRepository: { findInOrg: vi.fn(), listForOrg: vi.fn(), delete: vi.fn() },
+}));
+vi.mock("../pairing/pairing.service", () => ({
+  pairingService: { create: vi.fn(), cancel: vi.fn() },
 }));
 vi.mock("../command/command.service", () => ({
   commandService: { sendCommand: vi.fn(), listForDevice: vi.fn() },
@@ -27,6 +30,7 @@ import { eventRepository } from "../event/event.repository";
 import { fileService } from "../file/file.service";
 import { metricsService } from "../metrics/metrics.service";
 import { organizationRepository } from "../organization/organization.repository";
+import { pairingService } from "../pairing/pairing.service";
 import { processService } from "../process/process.service";
 import { screenshotService } from "../screenshot/screenshot.service";
 import { settingsService } from "../settings/settings.service";
@@ -179,30 +183,27 @@ describe("GET/POST /api/orgs/:orgId/devices", () => {
     expect(mockedDeviceRepo.listForOrg).toHaveBeenCalledWith(ORG);
   });
 
-  it("does not let a VIEWER add a device", async () => {
+  it("only lets Owners and Admins create or cancel pairing codes", async () => {
+    vi.mocked(pairingService.create).mockResolvedValue({ id: "pc-1", code: "K7QM-3XRP" } as never);
+    const codes = `/api/orgs/${ORG}/devices/pairing-codes`;
+    const codeId = "8d3c4f1e-2b7a-4c9d-9e1f-0a2b3c4d5e6f";
+
     memberAs("VIEWER");
+    expect((await request(app).post(codes).set(auth).send({ name: "New laptop" })).status).toBe(403);
+    expect((await request(app).delete(`${codes}/${codeId}`).set(auth)).status).toBe(403);
+    expect(pairingService.create).not.toHaveBeenCalled();
 
-    const res = await request(app).post(`/api/orgs/${ORG}/devices`).set(auth).send({ name: "New laptop" });
-
-    expect(res.status).toBe(403);
-    expect(mockedDeviceRepo.create).not.toHaveBeenCalled();
+    memberAs("ADMIN");
+    expect((await request(app).post(codes).set(auth).send({ name: "  New laptop " })).status).toBe(201);
+    expect(pairingService.create).toHaveBeenCalledWith(ORG, USER, "New laptop");
+    expect((await request(app).delete(`${codes}/${codeId}`).set(auth)).status).toBe(200);
+    expect(pairingService.cancel).toHaveBeenCalledWith(ORG, codeId);
   });
 
-  it("creates a device in the organization and returns its token once, never its hash", async () => {
-    memberAs("ADMIN");
-    mockedDeviceRepo.create.mockResolvedValue({ ...DEVICE, name: "New laptop" });
-
-    const res = await request(app).post(`/api/orgs/${ORG}/devices`).set(auth).send({ name: "  New laptop " });
-
-    expect(res.status).toBe(201);
-    const body = res.body as { data: { device: Record<string, unknown>; token: string } };
-    expect(body.data.token).toMatch(/^[0-9a-f]{96}$/);
-    expect(body.data.device).not.toHaveProperty("tokenHash");
-
-    const createArgs = mockedDeviceRepo.create.mock.calls[0][0];
-    expect(createArgs.orgId).toBe(ORG);
-    expect(createArgs.name).toBe("New laptop");
-    expect(createArgs.tokenHash).not.toBe(body.data.token);
+  it("no longer adds a device directly", async () => {
+    memberAs("OWNER");
+    const res = await request(app).post(`/api/orgs/${ORG}/devices`).set(auth).send({ name: "New laptop" });
+    expect(res.status).toBe(404);
   });
 });
 

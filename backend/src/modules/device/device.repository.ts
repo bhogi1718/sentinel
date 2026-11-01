@@ -45,13 +45,6 @@ export const deviceRepository = {
     });
   },
 
-  create(params: { orgId: string; name: string; tokenHash: string }): Promise<OrgDevice> {
-    return prisma.device.create({
-      data: { orgId: params.orgId, name: params.name, tokenHash: params.tokenHash },
-      select: orgDeviceSelect,
-    });
-  },
-
   /// Deletes the device, scoped to its organization. Its events and commands
   /// go with it (cascade); audit entries keep their copy of its name.
   /// Returns whether a row was deleted.

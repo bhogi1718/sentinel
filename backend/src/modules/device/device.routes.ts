@@ -14,19 +14,17 @@ import { metricsController } from "../metrics/metrics.controller";
 import { processController } from "../process/process.controller";
 import { screenshotController } from "../screenshot/screenshot.controller";
 import { deviceController } from "./device.controller";
-import { createDeviceSchema } from "./device.validation";
+import { pairingRouter } from "../pairing/pairing.routes";
 
 /// Mounted at /api/orgs/:orgId/devices, inside the org-scoped router - so
 /// authGuard and orgContext have already run for everything here.
 export const deviceRouter = Router({ mergeParams: true });
 
 deviceRouter.get("/", requirePermission("devices:view"), asyncHandler(deviceController.list));
-deviceRouter.post(
-  "/",
-  requirePermission("devices:manage"),
-  validateRequest(createDeviceSchema),
-  asyncHandler(deviceController.create),
-);
+// New devices are added by pairing: an Owner or Admin creates a short code
+// here, and the agent exchanges it for its token (see modules/pairing).
+// Registered ahead of /:deviceId so "pairing-codes" is never read as an id.
+deviceRouter.use("/pairing-codes", requirePermission("devices:manage"), pairingRouter);
 
 /// Everything under /api/orgs/:orgId/devices/:deviceId. deviceContext runs
 /// once for the whole subtree and 404s any device outside the org.

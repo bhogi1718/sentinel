@@ -20,6 +20,7 @@ export const auditActionDisplay: Record<AuditAction, { label: string; icon: Icon
   MEMBER_REMOVED: { label: "Removed a member", icon: "person" },
   MEMBER_LEFT: { label: "Left the organization", icon: "logout" },
   DEVICE_REMOVED: { label: "Removed a device", icon: "delete" },
+  DEVICE_ADDED: { label: "Added a device", icon: "add" },
 };
 
 const ROLE_LABEL: Record<string, string> = { OWNER: "Owner", ADMIN: "Admin", VIEWER: "Viewer" };

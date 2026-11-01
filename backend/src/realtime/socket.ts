@@ -61,6 +61,13 @@ export function broadcastStreamFrame(deviceId: string, jpeg: Buffer): void {
   io?.of("/dashboard").to(streamRoom(deviceId)).emit("stream:frame", jpeg);
 }
 
+/// Tells an organization's dashboards that a device was just paired - the
+/// console showing that pairing code (pairingCodeId) moves on to it, and
+/// device lists refresh.
+export function broadcastDeviceAdded(orgId: string, deviceId: string, pairingCodeId: string): void {
+  io?.of("/dashboard").to(orgRoom(orgId)).emit("device:added", { deviceId, pairingCodeId });
+}
+
 /// Tells an organization's dashboards that one of its devices was removed,
 /// so open consoles drop it from their list and leave its pages.
 export function broadcastDeviceRemoved(orgId: string, deviceId: string): void {

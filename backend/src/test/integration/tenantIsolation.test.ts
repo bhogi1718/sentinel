@@ -175,14 +175,16 @@ describe("devices", () => {
     expect(res.status).toBe(404);
   });
 
-  it("creates a device inside the caller's organization whose token authenticates into that organization", async () => {
-    const res = await as(world.aliceOwnerA).post(`/api/orgs/${world.orgA}/devices`, { name: "Second laptop" });
+  it("pairs a device into the caller's organization whose token authenticates into that organization", async () => {
+    const created = await as(world.aliceOwnerA).post(`/api/orgs/${world.orgA}/devices/pairing-codes`, { name: "Second laptop" });
+    expect(created.status).toBe(201);
+    const { code } = dataOf<{ code: string }>(created);
 
-    expect(res.status).toBe(201);
-    const { device, token } = dataOf<{ device: { id: string; orgId: string }; token: string }>(res);
-    expect(device.orgId).toBe(world.orgA);
+    const paired = await request(app).post("/api/agent/pair").send({ code });
+    expect(paired.status).toBe(201);
+    const { deviceId, token } = dataOf<{ deviceId: string; token: string }>(paired);
     await expect(deviceService.authenticate(token)).resolves.toEqual({
-      id: device.id,
+      id: deviceId,
       orgId: world.orgA,
       name: "Second laptop",
     });
@@ -251,7 +253,7 @@ describe("roles", () => {
     expect((await victor.post(`${base}/commands`, { type: "LOCK" })).status).toBe(403);
     expect((await victor.get(`${base}/files`)).status).toBe(403);
     expect((await victor.post(`${base}/screenshot`)).status).toBe(403);
-    expect((await victor.post(`/api/orgs/${world.orgA}/devices`, { name: "Sneaky" })).status).toBe(403);
+    expect((await victor.post(`/api/orgs/${world.orgA}/devices/pairing-codes`, { name: "Sneaky" })).status).toBe(403);
     expect((await victor.delete(`/api/orgs/${world.orgA}/settings/integrations/telegram`)).status).toBe(403);
     expect(await prisma.device.count({ where: { orgId: world.orgA } })).toBe(1);
   });
