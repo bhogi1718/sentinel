@@ -294,7 +294,10 @@ describe("access is re-checked while connected", () => {
   });
 
   it("disconnects a dashboard when its access token expires", async () => {
-    const shortLived = await dashboard(ALICE, 1);
+    // JWT expiry is whole seconds from a floored issue time, so a 1-second
+    // token can already be expired at the handshake. 2 seconds always leaves
+    // at least one to connect in.
+    const shortLived = await dashboard(ALICE, 2);
 
     const reason = await new Promise<string>((resolve) => shortLived.socket.once("disconnect", resolve));
 
