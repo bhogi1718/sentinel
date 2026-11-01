@@ -28,7 +28,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 sysinfo = "0.39"
-png = "0.17"
+png = "0.18"
 # JPEG encoding + downscaling for the live screen stream. Full-resolution
 # PNG frames are multiple MB each; downscaled JPEG frames are tens of KB,
 # which is what makes a live feed viable over Socket.IO on a small host.
