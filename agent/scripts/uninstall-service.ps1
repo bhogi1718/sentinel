@@ -39,3 +39,12 @@ if ($existingTask) {
 } else {
     Write-Host "Helper task '$HelperTaskName' is not registered." -ForegroundColor Yellow
 }
+
+# install-service.ps1 copies the agent, its helper and agent.toml here.
+$InstallDir = Join-Path $env:ProgramFiles "Sentinel Agent"
+if (Test-Path $InstallDir) {
+    Get-Process -Name "sentinel-agent-helper" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 1
+    Remove-Item $InstallDir -Recurse -Force
+    Write-Host "Removed $InstallDir." -ForegroundColor Green
+}

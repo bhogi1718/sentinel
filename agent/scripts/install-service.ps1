@@ -24,10 +24,23 @@ $ServiceDescription = "Reports laptop system events (boot, lock, sleep, network,
 $HelperTaskName = "SentinelAgentHelper"
 
 $AgentDir = Split-Path -Parent $PSScriptRoot
-$ExePath = Join-Path $AgentDir "target\release\sentinel-agent.exe"
-$HelperExePath = Join-Path $AgentDir "target\release\sentinel-agent-helper.exe"
+# target\ may be a junction to a folder outside OneDrive (OneDrive marks its
+# folders read-only, which breaks some crates' build scripts). The service
+# and the helper task are registered with the real path: Windows can't start
+# a service through a junction inside a OneDrive folder ("file not found").
+$TargetDir = Join-Path $AgentDir "target"
+$targetItem = Get-Item $TargetDir -ErrorAction SilentlyContinue
+if ($targetItem -and $targetItem.LinkType) {
+    $TargetDir = @($targetItem.Target)[0]
+}
+$ReleaseDir = Join-Path $TargetDir "release"
+$ExePath = Join-Path $ReleaseDir "sentinel-agent.exe"
+$HelperExePath = Join-Path $ReleaseDir "sentinel-agent-helper.exe"
 $ConfigSource = Join-Path $AgentDir "agent.toml"
-$ConfigDest = Join-Path $AgentDir "target\release\agent.toml"
+$ConfigDest = Join-Path $ReleaseDir "agent.toml"
+$InstallDir = Join-Path $env:ProgramFiles "Sentinel Agent"
+$InstalledExePath = Join-Path $InstallDir "sentinel-agent.exe"
+$InstalledHelperExePath = Join-Path $InstallDir "sentinel-agent-helper.exe"
 
 # Require elevation
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -82,10 +95,21 @@ if (-not (Test-Path $HelperExePath)) {
 Copy-Item $ConfigSource $ConfigDest -Force
 Write-Host "Copied agent.toml to $ConfigDest" -ForegroundColor Green
 
+# The service runs as LocalSystem, so its exe must live where only
+# administrators can write - otherwise anything running as the logged-in
+# user could replace it and get SYSTEM rights. Program Files is that place.
+# The helper is installed there too (it reads agent.toml next to itself);
+# it runs as the user and writes its log to %LOCALAPPDATA%\Sentinel Agent.
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+Copy-Item $ExePath $InstalledExePath -Force
+Copy-Item $HelperExePath $InstalledHelperExePath -Force
+Copy-Item $ConfigSource (Join-Path $InstallDir "agent.toml") -Force
+Write-Host "Installed the agent, its helper and agent.toml to $InstallDir" -ForegroundColor Green
+
 Write-Host "Creating service..." -ForegroundColor Cyan
 New-Service `
     -Name $ServiceName `
-    -BinaryPathName "`"$ExePath`"" `
+    -BinaryPathName "`"$InstalledExePath`"" `
     -DisplayName $ServiceDisplayName `
     -Description $ServiceDescription `
     -StartupType Automatic
@@ -101,7 +125,7 @@ Start-Sleep -Seconds 2
 $status = Get-Service -Name $ServiceName
 Write-Host ""
 Write-Host "Service '$ServiceDisplayName' status: $($status.Status)" -ForegroundColor Green
-Write-Host "Logs: $AgentDir\target\release\sentinel-agent.log.<date>"
+Write-Host "Logs: $InstallDir\sentinel-agent.log.<date>"
 
 # The helper runs per-session as the interactive user (not LocalSystem) so
 # it has natural, ACL-free access to the interactive desktop for window
@@ -120,7 +144,9 @@ if ($existingTask) {
 }
 
 $currentUser = "$env:USERDOMAIN\$env:USERNAME"
-$action = New-ScheduledTaskAction -Execute $HelperExePath
+# Quoted: Task Scheduler splits an unquoted path at its first space (e.g. a
+# user folder like C:\Users\Jane Doe) and then reports "file not found".
+$action = New-ScheduledTaskAction -Execute "`"$InstalledHelperExePath`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
