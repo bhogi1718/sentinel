@@ -22,7 +22,7 @@ toml = "0.8"
 # token, and rewriting agent.toml without losing its comments. Both are
 # already in the tree (via rust_socketio and toml).
 reqwest = { version = "0.12", features = ["json"] }
-toml_edit = "0.22"
+toml_edit = "0.25"
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
